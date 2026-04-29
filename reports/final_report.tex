@@ -13,7 +13,8 @@
 \usepackage{caption}
 \usepackage{float}
 \usepackage{xcolor}
-\usepackage[section]{placeins}
+\usepackage{cuted}
+\usepackage{capt-of}
 
 \hypersetup{
   colorlinks=true,
@@ -25,7 +26,11 @@
 \setlength{\columnsep}{0.22in}
 \setlength{\parskip}{0.15em}
 \setlength{\parindent}{1em}
-\captionsetup{font=small,labelfont=bf}
+\setlength{\textfloatsep}{6pt plus 2pt minus 2pt}
+\setlength{\floatsep}{5pt plus 2pt minus 2pt}
+\setlength{\intextsep}{5pt plus 2pt minus 2pt}
+\setlength{\dbltextfloatsep}{6pt plus 2pt minus 2pt}
+\captionsetup{font=footnotesize,labelfont=bf}
 
 \title{\vspace{-1.0em}A Reproducible Computer Vision Study Across Fine-Grained Recognition, Pet Segmentation, and Aerial Object Detection}
 \author{Yuheng Li\\Student ID: 23307130334\\GitHub: \url{https://github.com/yuheng-li-ai/CV_Midterm}}
@@ -89,33 +94,33 @@ The SE-ResNet-18 result is a useful negative result. Although channel attention 
 
 Among the extensions, the pretrained ResNet-34 achieved the best test accuracy, 90.60\%. This suggests that moderate additional depth can improve fine-grained discrimination when pretrained features are available. Label smoothing and freeze-then-unfreeze gave smaller gains over the baseline. Label smoothing slightly improved test accuracy but lowered best validation accuracy, which suggests mild regularization rather than a decisive improvement. Freeze-then-unfreeze improved validation accuracy and test accuracy modestly, supporting the idea that stabilizing the new classifier head before full fine-tuning can reduce early optimization noise.
 
-\begin{figure}[t]
+\begin{center}
 \centering
 \includegraphics[width=\linewidth]{assets/classification_all_test_summary/test_accuracy.png}
-\caption{Classification test accuracy comparison. The main gain comes from ImageNet pretraining, while the best extension is the larger pretrained ResNet-34.}
+\captionof{figure}{Classification test accuracy comparison. The main gain comes from ImageNet pretraining, while the best extension is the larger pretrained ResNet-34.}
 \label{fig:classification_bar}
-\end{figure}
+\end{center}
 
-\begin{figure}[t]
+\begin{center}
 \centering
 \includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_curves.png}
-\caption{Training curves for the ImageNet-pretrained ResNet-18 baseline. The validation peak occurs early, showing why best-checkpoint evaluation is preferable to last-epoch reporting.}
+\captionof{figure}{Training curves for the ImageNet-pretrained ResNet-18 baseline. The validation peak occurs early, showing why best-checkpoint evaluation is preferable to last-epoch reporting.}
 \label{fig:classification_curves}
-\end{figure}
+\end{center}
 
-\begin{figure}[t]
+\begin{center}
 \centering
 \includegraphics[width=\linewidth]{assets/classification_resnet18_random_curves.png}
-\caption{Training curves for the randomly initialized ResNet-18. Compared with Fig.~\ref{fig:classification_curves}, convergence is much slower and the validation accuracy remains far below the pretrained model under the same epoch budget.}
+\captionof{figure}{Training curves for the randomly initialized ResNet-18. Compared with Fig.~\ref{fig:classification_curves}, convergence is much slower and the validation accuracy remains far below the pretrained model under the same epoch budget.}
 \label{fig:classification_random_curves}
-\end{figure}
+\end{center}
 
-\begin{figure}[t]
+\begin{center}
 \centering
 \includegraphics[width=\linewidth]{assets/classification_se_resnet18_curves.png}
-\caption{Training curves for the SE-ResNet-18 extension. The curve shows that attention did not create a clear generalization gain over the simpler pretrained ResNet-18 baseline.}
+\captionof{figure}{Training curves for the SE-ResNet-18 extension. The curve shows that attention did not create a clear generalization gain over the simpler pretrained ResNet-18 baseline.}
 \label{fig:classification_se_curves}
-\end{figure}
+\end{center}
 
 \subsection{Error Analysis}
 
@@ -123,21 +128,39 @@ The confusion matrix in Fig.~\ref{fig:classification_confusion} and the mistake 
 
 This observation changes how the classification result should be judged. A test accuracy near 90\% is strong, but the remaining errors are concentrated exactly where subtle anatomical cues are required. More data augmentation, higher-resolution crops, or part-aware features might help these cases more than a generic increase in classifier capacity.
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
-\includegraphics[width=0.88\textwidth]{assets/classification_resnet18_baseline_analysis/test_confusion_matrix.png}
-\caption{Confusion matrix for the pretrained ResNet-18 baseline. The strongest off-diagonal blocks correspond to visually similar breeds rather than random category failures.}
+\begin{minipage}{0.62\textwidth}
+\centering
+\includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_analysis/test_confusion_matrix.png}
+\end{minipage}
+\hfill
+\begin{minipage}{0.34\textwidth}
+\small
+\textbf{Interpretation.} The matrix is dominated by a strong diagonal, which is consistent with the near-90\% test accuracy. The visible off-diagonal errors are concentrated in breed groups with similar appearance rather than being uniformly distributed. This supports a fine-grained recognition interpretation: the model is not confused about the broad pet category, but about subtle breed-level cues such as head shape, coat texture, and color pattern.
+\end{minipage}
+\captionof{figure}{Confusion matrix for the pretrained ResNet-18 baseline with adjacent interpretation. The strongest off-diagonal blocks correspond to visually similar breeds rather than random category failures.}
 \label{fig:classification_confusion}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
-\begin{figure}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
-\includegraphics[width=0.88\linewidth]{assets/classification_resnet18_baseline_analysis/test_mistakes.png}
-\caption{Representative classification mistakes from the pretrained ResNet-18 baseline. The tall mistake grid is shown as a separate figure instead of being forced beside the confusion matrix, because their aspect ratios are very different.}
+\begin{minipage}{0.34\textwidth}
+\centering
+\includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_analysis/test_mistakes.png}
+\end{minipage}
+\hfill
+\begin{minipage}{0.60\textwidth}
+\small
+\textbf{Qualitative error pattern.} The representative mistakes show that background clutter is not the only source of failure. Several wrong predictions involve animals photographed in clear view, but the discriminative breed cues are subtle. The pit bull, Staffordshire bull terrier, and bulldog group is difficult because of similar short fur and head structure. The Ragdoll, Birman, and Siamese group is difficult because coat color and facial color masks overlap. These examples explain why the ResNet-34 capacity extension helps but does not eliminate the hardest errors: more capacity improves representation, but the dataset still asks for local anatomical distinctions.
+\end{minipage}
+\captionof{figure}{Representative classification mistakes from the pretrained ResNet-18 baseline. The tall grid is paired with text instead of being forced beside a wide matrix, avoiding the previous aspect-ratio mismatch.}
 \label{fig:classification_mistakes}
-\end{figure}
-
-\FloatBarrier
+\vspace{-0.8em}
+\end{strip}
 
 \section{Task 3: Pet Semantic Segmentation}
 
@@ -174,21 +197,23 @@ Dice loss achieved the best required result, with 77.90\% test mIoU. This suppor
 
 The interpretation should remain bounded. Dice was best in this controlled setup, but this does not mean Dice is universally superior. Cross-entropy can be easier to optimize early, and Dice can be sensitive when classes are extremely small or predictions are unstable. In this dataset and schedule, however, the object-overlap objective matched the evaluation target well.
 
-\begin{figure}[t]
+\begin{center}
 \centering
 \includegraphics[width=\linewidth]{assets/segmentation_60_test_summary/test_miou.png}
-\caption{Test mIoU for the required 60-epoch segmentation losses. Dice loss gives the strongest required result.}
+\captionof{figure}{Test mIoU for the required 60-epoch segmentation losses. Dice loss gives the strongest required result.}
 \label{fig:segmentation_bar}
-\end{figure}
+\end{center}
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_ce_60/curves.png}
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_60/curves.png}
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_ce_plus_dice_60/curves.png}
-\caption{Training curves for the required segmentation losses: CE, Dice, and CE+Dice from left to right. These panels have the same aspect ratio and are therefore compared side by side. Dice improves more slowly but reaches the best validation and test mIoU.}
+\captionof{figure}{Training curves for the required segmentation losses: CE, Dice, and CE+Dice from left to right. These panels have the same aspect ratio and are therefore compared side by side. Dice improves more slowly but reaches the best validation and test mIoU.}
 \label{fig:segmentation_required_curves}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
 \subsection{Loss Engineering Extensions}
 
@@ -212,14 +237,16 @@ Focal Loss & 45 & 0.7637 & 0.7645\\
 \end{tabular}
 \end{table}
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_60/curves.png}
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_smooth_0_1_60/curves.png}
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_focal_60/curves.png}
-\caption{Training curves for segmentation extensions: Dice with smooth 1.0, Dice with smooth 0.1, and Focal Loss from left to right. The two Dice variants are close, while Focal Loss does not improve mIoU despite emphasizing hard pixels.}
+\captionof{figure}{Training curves for segmentation extensions: Dice with smooth 1.0, Dice with smooth 0.1, and Focal Loss from left to right. The two Dice variants are close, while Focal Loss does not improve mIoU despite emphasizing hard pixels.}
 \label{fig:segmentation_extension_curves}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
 \subsection{Qualitative Segmentation Analysis}
 
@@ -227,21 +254,39 @@ Figure~\ref{fig:segmentation_errors} compares ground-truth masks, predictions, b
 
 This qualitative evidence also clarifies the Focal Loss result. If the difficult pixels are mainly ambiguous boundaries, then increasing their weight does not necessarily create cleaner boundaries. It may instead amplify label noise or local uncertainty. Dice improves global overlap, but even it does not fully solve contour precision. A natural next step would be a boundary-aware loss or higher-resolution decoding, but that is beyond the required scope.
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
-\includegraphics[height=0.86\textheight]{assets/segmentation_60_loss_mask_grid.png}
-\caption{Qualitative mask examples for the required segmentation losses. The visual comparison complements Table~\ref{tab:segmentation}: Dice improves overlap, but all losses still struggle around thin structures and boundaries.}
+\begin{minipage}{0.40\textwidth}
+\centering
+\includegraphics[width=\linewidth]{assets/segmentation_60_loss_mask_grid.png}
+\end{minipage}
+\hfill
+\begin{minipage}{0.55\textwidth}
+\small
+\textbf{Mask-level reading.} The qualitative masks confirm the quantitative ordering in Table~\ref{tab:segmentation}, but they also show why mIoU is not the whole story. Dice improves global object overlap, while CE is stable but less directly aligned with overlap. The remaining errors concentrate on ears, legs, fur boundaries, and regions where the pet and background have similar color. Therefore, the best Dice score should be understood as better region consistency rather than perfect contour recovery.
+\end{minipage}
+\captionof{figure}{Qualitative mask examples for the required segmentation losses. The panel places visual evidence and interpretation side by side to avoid a mostly empty image-only page.}
 \label{fig:segmentation_masks}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
-\begin{figure}[t]
+\begin{strip}
+\vspace{-0.8em}
+\centering
+\begin{minipage}{0.42\textwidth}
 \centering
 \includegraphics[width=\linewidth]{assets/segmentation_error_cases.png}
-\caption{Segmentation failure cases. The most persistent errors occur at object boundaries, thin structures, and low-contrast regions rather than in the coarse pet/background separation.}
+\end{minipage}
+\hfill
+\begin{minipage}{0.53\textwidth}
+\small
+\textbf{Failure mode.} The error overlays make the boundary problem more explicit than the raw masks. The model usually captures the pet body, but red error regions remain around object contours and thin structures. This explains why Focal Loss did not solve the problem: many hard pixels are ambiguous boundary pixels, so simply increasing their weight can emphasize uncertainty rather than produce a cleaner contour.
+\end{minipage}
+\captionof{figure}{Segmentation failure cases with compact text integration. The most persistent errors occur at object boundaries, thin structures, and low-contrast regions rather than in the coarse pet/background separation.}
 \label{fig:segmentation_errors}
-\end{figure}
-
-\FloatBarrier
+\vspace{-0.8em}
+\end{strip}
 
 \section{Task 2: VisDrone Detection and Tracking}
 
@@ -273,27 +318,50 @@ YOLOv8n is the required lightweight one-stage baseline. It reached 0.2985 mAP50 
 
 The improvement has two sources that cannot be perfectly separated in this experiment: the newer YOLO11m architecture and the larger 960-pixel input size. Both are plausible contributors. Small objects occupy very few pixels in VisDrone, so higher resolution directly improves feature visibility. At the same time, the larger model has more capacity to represent dense object patterns and difficult class distinctions. The practical conclusion is that for VisDrone, a stronger detector at higher resolution is much more useful for downstream tracking than a very small detector, as long as the available GPU memory permits it.
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
-\includegraphics[width=0.88\textwidth]{assets/detection_yolov8n_results.png}
-\caption{YOLOv8n training summary on VisDrone. The lightweight baseline improves steadily but remains limited by low recall and small-object localization difficulty at 640-pixel input size.}
+\begin{minipage}{0.61\textwidth}
+\centering
+\includegraphics[width=\linewidth]{assets/detection_yolov8n_results.png}
+\end{minipage}
+\hfill
+\begin{minipage}{0.34\textwidth}
+\small
+\textbf{Baseline reading.} YOLOv8n improves steadily, but recall remains low for VisDrone. This is expected because many pedestrians and vehicles occupy very few pixels, and dense occlusion makes localization difficult. The lightweight model is useful as a required baseline, but it is not strong enough for reliable downstream counting.
+\end{minipage}
+\captionof{figure}{YOLOv8n training summary on VisDrone with adjacent interpretation.}
 \label{fig:detection_v8n_curves}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
-\includegraphics[width=0.88\textwidth]{assets/detection_yolov8s_results.png}
-\caption{YOLOv8s training summary on VisDrone. Compared with YOLOv8n, the larger model improves precision, recall, mAP50, and mAP50-95, confirming that capacity helps in dense aerial scenes.}
+\begin{minipage}{0.61\textwidth}
+\centering
+\includegraphics[width=\linewidth]{assets/detection_yolov8s_results.png}
+\end{minipage}
+\hfill
+\begin{minipage}{0.34\textwidth}
+\small
+\textbf{Capacity effect.} Compared with YOLOv8n, YOLOv8s improves precision, recall, mAP50, and mAP50-95. This shows that the low baseline score is not only a training failure; VisDrone genuinely benefits from larger detector capacity. The trade-off is model size and training time, which matters because the detector is later used for video tracking.
+\end{minipage}
+\captionof{figure}{YOLOv8s training summary on VisDrone with compact explanation.}
 \label{fig:detection_v8s_curves}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
-\includegraphics[width=0.49\textwidth]{assets/detection_yolo11m_img960_metrics.png}
-\includegraphics[width=0.49\textwidth]{assets/detection_yolo11m_img960_losses.png}
-\caption{YOLO11m validation metrics and losses on VisDrone. The manually truncated run still achieved the best recorded score at epoch 36, while the losses were still decreasing slowly, suggesting possible remaining improvement with more epochs.}
+\includegraphics[width=0.48\textwidth]{assets/detection_yolo11m_img960_metrics.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{assets/detection_yolo11m_img960_losses.png}
+\captionof{figure}{YOLO11m validation metrics and losses on VisDrone. The manually truncated run still achieved the best recorded score at epoch 36, while the losses were still decreasing slowly, suggesting possible remaining improvement with more epochs.}
 \label{fig:detection_metrics}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
 \subsection{Video Tracking Setup}
 
@@ -325,32 +393,46 @@ This comparison illustrates a precision-recall trade-off at the tracking level. 
 
 The difference between ByteTrack and BoT-SORT should not be simplified as one being universally better. The two trackers made different association decisions in dense traffic. ByteTrack preserved more crossing candidates and therefore produced a higher count. BoT-SORT was more conservative in the final count. Without manually annotated video ground truth, the count should be treated as a reproducible estimate rather than an absolute traffic measurement.
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_350.jpg}
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_351.jpg}
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_352.jpg}
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_353.jpg}
-\caption{Four consecutive dense and occluded tracking frames. The scene contains overlapping pedestrians, bicycles or e-bikes, vehicles, rain, and small objects, making ID preservation difficult.}
+\captionof{figure}{Four consecutive dense and occluded tracking frames. The scene contains overlapping pedestrians, bicycles or e-bikes, vehicles, rain, and small objects, making ID preservation difficult.}
 \label{fig:tracking_occlusion}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
-\begin{figure*}[t]
+\begin{strip}
+\vspace{-0.8em}
 \centering
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_630.jpg}
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_631.jpg}
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_632.jpg}
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_633.jpg}
-\caption{A consecutive line-crossing sequence. The tracked object crosses the virtual line and the count changes from 2 to 3 around frame 632.}
+\captionof{figure}{A consecutive line-crossing sequence. The tracked object crosses the virtual line and the count changes from 2 to 3 around frame 632.}
 \label{fig:tracking_crossing}
-\end{figure*}
+\vspace{-0.8em}
+\end{strip}
 
-\begin{figure}[t]
+\begin{strip}
+\vspace{-0.8em}
+\centering
+\begin{minipage}{0.57\textwidth}
 \centering
 \includegraphics[width=\linewidth]{assets/tracking_report_frames/counting_example_815.jpg}
-\caption{A later tracking snapshot with accumulated line count. The figure also shows remaining limitations: some visible road users are difficult to detect or track under rain, distance, and occlusion.}
+\end{minipage}
+\hfill
+\begin{minipage}{0.38\textwidth}
+\small
+\textbf{Counting snapshot.} This later frame shows the accumulated count after several crossing events. It also exposes the limitation of the pipeline: some visible road users remain difficult under rain, distance, and occlusion. Thus the number should be treated as a reproducible algorithmic estimate rather than a manually verified traffic statistic.
+\end{minipage}
+\captionof{figure}{A later tracking snapshot with accumulated line count and adjacent interpretation.}
 \label{fig:tracking_count}
-\end{figure}
+\vspace{-0.8em}
+\end{strip}
 
 \subsection{Counting Error Analysis}
 
