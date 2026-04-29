@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cvhw2"
+version = "0.1.0"
+description = "CV assignment 2 harness for classification, segmentation, detection, and tracking."
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+cvhw2 = "cvhw2.cli:main"

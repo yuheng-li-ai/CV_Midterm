@@ -1,0 +1,13 @@
+name: yolov8n_visdrone
+model: yolov8n.pt
+data: data/visdrone_yolo/visdrone.yaml
+epochs: 50
+imgsz: 640
+batch: 16
+device: 2
+pretrained: true
+optimizer: auto
+lr0: 0.01
+workers: 4
+patience: 20
+project_dir: runs/detection

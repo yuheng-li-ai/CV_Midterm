@@ -1,0 +1,13 @@
+name: yolov8s_visdrone_capacity_extension
+model: yolov8s.pt
+data: data/visdrone_yolo/visdrone.yaml
+epochs: 50
+imgsz: 640
+batch: 16
+device: 2
+pretrained: true
+optimizer: auto
+lr0: 0.01
+workers: 4
+patience: 20
+project_dir: runs/detection

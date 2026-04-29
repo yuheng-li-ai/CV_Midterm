@@ -1,0 +1,13 @@
+name: yolo11m_visdrone_img960_extension
+model: yolo11m.pt
+data: data/visdrone_yolo/visdrone.yaml
+epochs: 50
+imgsz: 960
+batch: 16
+device: 2
+pretrained: true
+optimizer: auto
+lr0: 0.01
+workers: 8
+patience: 20
+project_dir: runs/detection
