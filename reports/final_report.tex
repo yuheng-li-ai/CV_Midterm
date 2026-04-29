@@ -13,6 +13,7 @@
 \usepackage{caption}
 \usepackage{float}
 \usepackage{xcolor}
+\usepackage[section]{placeins}
 
 \hypersetup{
   colorlinks=true,
@@ -102,26 +103,41 @@ Among the extensions, the pretrained ResNet-34 achieved the best test accuracy, 
 \label{fig:classification_curves}
 \end{figure}
 
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{assets/classification_resnet18_random_curves.png}
+\caption{Training curves for the randomly initialized ResNet-18. Compared with Fig.~\ref{fig:classification_curves}, convergence is much slower and the validation accuracy remains far below the pretrained model under the same epoch budget.}
+\label{fig:classification_random_curves}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{assets/classification_se_resnet18_curves.png}
+\caption{Training curves for the SE-ResNet-18 extension. The curve shows that attention did not create a clear generalization gain over the simpler pretrained ResNet-18 baseline.}
+\label{fig:classification_se_curves}
+\end{figure}
+
 \subsection{Error Analysis}
 
-The confusion matrix and mistake grid in Fig.~\ref{fig:classification_errors} show that most errors are semantically plausible rather than arbitrary. The top confusion pairs include American Pit Bull Terrier versus Staffordshire Bull Terrier, Staffordshire Bull Terrier versus American Pit Bull Terrier, Ragdoll versus Birman, American Pit Bull Terrier versus American Bulldog, and Egyptian Mau versus Bengal. These are visually similar classes with shared body shape, fur color, or facial structure. The model therefore fails mainly in fine-grained discrimination, not in coarse pet recognition.
+The confusion matrix in Fig.~\ref{fig:classification_confusion} and the mistake grid in Fig.~\ref{fig:classification_mistakes} show that most errors are semantically plausible rather than arbitrary. The top confusion pairs include American Pit Bull Terrier versus Staffordshire Bull Terrier, Staffordshire Bull Terrier versus American Pit Bull Terrier, Ragdoll versus Birman, American Pit Bull Terrier versus American Bulldog, and Egyptian Mau versus Bengal. These are visually similar classes with shared body shape, fur color, or facial structure. The model therefore fails mainly in fine-grained discrimination, not in coarse pet recognition.
 
 This observation changes how the classification result should be judged. A test accuracy near 90\% is strong, but the remaining errors are concentrated exactly where subtle anatomical cues are required. More data augmentation, higher-resolution crops, or part-aware features might help these cases more than a generic increase in classifier capacity.
 
 \begin{figure*}[t]
 \centering
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_analysis/test_confusion_matrix.png}
-\end{minipage}
-\hfill
-\begin{minipage}{0.48\textwidth}
-\centering
-\includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_analysis/test_mistakes.png}
-\end{minipage}
-\caption{Classification error evidence for the ResNet-18 baseline: confusion matrix and representative mistakes. The dominant errors occur between visually similar breeds.}
-\label{fig:classification_errors}
+\includegraphics[width=0.88\textwidth]{assets/classification_resnet18_baseline_analysis/test_confusion_matrix.png}
+\caption{Confusion matrix for the pretrained ResNet-18 baseline. The strongest off-diagonal blocks correspond to visually similar breeds rather than random category failures.}
+\label{fig:classification_confusion}
 \end{figure*}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.88\linewidth]{assets/classification_resnet18_baseline_analysis/test_mistakes.png}
+\caption{Representative classification mistakes from the pretrained ResNet-18 baseline. The tall mistake grid is shown as a separate figure instead of being forced beside the confusion matrix, because their aspect ratios are very different.}
+\label{fig:classification_mistakes}
+\end{figure}
+
+\FloatBarrier
 
 \section{Task 3: Pet Semantic Segmentation}
 
@@ -165,6 +181,15 @@ The interpretation should remain bounded. Dice was best in this controlled setup
 \label{fig:segmentation_bar}
 \end{figure}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.32\textwidth]{runs/segmentation/unet_ce_60/curves.png}
+\includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_60/curves.png}
+\includegraphics[width=0.32\textwidth]{runs/segmentation/unet_ce_plus_dice_60/curves.png}
+\caption{Training curves for the required segmentation losses: CE, Dice, and CE+Dice from left to right. These panels have the same aspect ratio and are therefore compared side by side. Dice improves more slowly but reaches the best validation and test mIoU.}
+\label{fig:segmentation_required_curves}
+\end{figure*}
+
 \subsection{Loss Engineering Extensions}
 
 Two additional loss experiments were conducted. First, the Dice smoothing constant was reduced from 1.0 to 0.1. This slightly increased best validation mIoU from 0.7748 to 0.7769, but the test mIoU was almost unchanged, 0.7785 versus 0.7790. The smaller smoothing value may make the objective more sensitive to foreground and boundary errors, but the difference is too small to claim a robust generalization improvement.
@@ -187,6 +212,15 @@ Focal Loss & 45 & 0.7637 & 0.7645\\
 \end{tabular}
 \end{table}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_60/curves.png}
+\includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_smooth_0_1_60/curves.png}
+\includegraphics[width=0.32\textwidth]{runs/segmentation/unet_focal_60/curves.png}
+\caption{Training curves for segmentation extensions: Dice with smooth 1.0, Dice with smooth 0.1, and Focal Loss from left to right. The two Dice variants are close, while Focal Loss does not improve mIoU despite emphasizing hard pixels.}
+\label{fig:segmentation_extension_curves}
+\end{figure*}
+
 \subsection{Qualitative Segmentation Analysis}
 
 Figure~\ref{fig:segmentation_errors} compares ground-truth masks, predictions, binary error maps, and overlays for representative difficult examples. The dominant errors are not complete object misses; they are boundary and contour errors. Thin legs, ears, fur edges, and low-contrast foreground-background transitions are harder than the main body region. This explains why mIoU can improve while the masks still look imperfect around fine structures.
@@ -195,10 +229,19 @@ This qualitative evidence also clarifies the Focal Loss result. If the difficult
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=0.98\textwidth]{assets/segmentation_error_cases.png}
+\includegraphics[height=0.86\textheight]{assets/segmentation_60_loss_mask_grid.png}
+\caption{Qualitative mask examples for the required segmentation losses. The visual comparison complements Table~\ref{tab:segmentation}: Dice improves overlap, but all losses still struggle around thin structures and boundaries.}
+\label{fig:segmentation_masks}
+\end{figure*}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{assets/segmentation_error_cases.png}
 \caption{Segmentation failure cases. The most persistent errors occur at object boundaries, thin structures, and low-contrast regions rather than in the coarse pet/background separation.}
 \label{fig:segmentation_errors}
-\end{figure*}
+\end{figure}
+
+\FloatBarrier
 
 \section{Task 2: VisDrone Detection and Tracking}
 
@@ -230,19 +273,27 @@ YOLOv8n is the required lightweight one-stage baseline. It reached 0.2985 mAP50 
 
 The improvement has two sources that cannot be perfectly separated in this experiment: the newer YOLO11m architecture and the larger 960-pixel input size. Both are plausible contributors. Small objects occupy very few pixels in VisDrone, so higher resolution directly improves feature visibility. At the same time, the larger model has more capacity to represent dense object patterns and difficult class distinctions. The practical conclusion is that for VisDrone, a stronger detector at higher resolution is much more useful for downstream tracking than a very small detector, as long as the available GPU memory permits it.
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{assets/detection_yolo11m_img960_metrics.png}
-\caption{YOLO11m validation metrics on VisDrone. The manually truncated run still achieved the best recorded score at epoch 36.}
-\label{fig:detection_metrics}
-\end{figure}
+\includegraphics[width=0.88\textwidth]{assets/detection_yolov8n_results.png}
+\caption{YOLOv8n training summary on VisDrone. The lightweight baseline improves steadily but remains limited by low recall and small-object localization difficulty at 640-pixel input size.}
+\label{fig:detection_v8n_curves}
+\end{figure*}
 
-\begin{figure}[t]
+\begin{figure*}[t]
 \centering
-\includegraphics[width=\linewidth]{assets/detection_yolo11m_img960_losses.png}
-\caption{YOLO11m training and validation losses. The losses were still decreasing slowly, suggesting possible remaining improvement with more epochs.}
-\label{fig:detection_losses}
-\end{figure}
+\includegraphics[width=0.88\textwidth]{assets/detection_yolov8s_results.png}
+\caption{YOLOv8s training summary on VisDrone. Compared with YOLOv8n, the larger model improves precision, recall, mAP50, and mAP50-95, confirming that capacity helps in dense aerial scenes.}
+\label{fig:detection_v8s_curves}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=0.49\textwidth]{assets/detection_yolo11m_img960_metrics.png}
+\includegraphics[width=0.49\textwidth]{assets/detection_yolo11m_img960_losses.png}
+\caption{YOLO11m validation metrics and losses on VisDrone. The manually truncated run still achieved the best recorded score at epoch 36, while the losses were still decreasing slowly, suggesting possible remaining improvement with more epochs.}
+\label{fig:detection_metrics}
+\end{figure*}
 
 \subsection{Video Tracking Setup}
 
