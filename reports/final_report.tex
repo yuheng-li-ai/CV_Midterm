@@ -33,7 +33,7 @@
 \captionsetup{font=footnotesize,labelfont=bf}
 
 \title{\vspace{-1.0em}A Reproducible Computer Vision Study Across Fine-Grained Recognition, Pet Segmentation, and Aerial Object Detection}
-\author{Yuheng Li\\Student ID: 23307130334\\GitHub: \url{https://github.com/yuheng-li-ai/CV_Midterm}}
+\author{Yuheng Li\\Student ID: 23307130334\\GitHub: \url{https://github.com/yuheng-li-ai/CV_Midterm}\\Model weights: \href{https://www.modelscope.cn/models/yuhengli/cv-hw2-final-model}{ModelScope repository}}
 \date{}
 
 \begin{document}
@@ -52,6 +52,8 @@ The main goal of this report is not only to obtain competitive numbers under the
 \section{Unified Experimental Harness}
 
 The project is organized around a single Python package, \path{cvhw2}. The command-line interface exposes five major commands: classification training, segmentation training, VisDrone conversion, detection training, and video tracking. Configurations are stored in \path{configs/}; scalar logs are written to \path{runs/}; checkpoints are written to \path{checkpoints/}; and final visual evidence is collected in \path{assets/}. This structure was useful because the assignment required many comparisons, and accidental changes in data loading, evaluation split, or checkpoint selection would otherwise make the results hard to interpret.
+
+The released final and auxiliary checkpoints are hosted on ModelScope at \url{https://www.modelscope.cn/models/yuhengli/cv-hw2-final-model}. The ModelScope repository includes the three final models, the comparison checkpoints used in the report, the training configurations, and this final PDF.
 
 The most important harness rule is validation-based model selection. During training, the best checkpoint is selected by validation accuracy for classification, validation mIoU for segmentation, and validation mAP50-95 for detection. The final test result is then computed from that best checkpoint instead of from the last epoch. This matters because several curves peaked before the final epoch, especially the pretrained ResNet-18 classification baseline and some segmentation losses. The harness also automatically saves learning curves and qualitative outputs, which prevents the final report from relying only on scalar metrics.
 

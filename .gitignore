@@ -6,6 +6,7 @@ data/
 runs/
 checkpoints/
 assets/
+modelscope_upload/
 reports/*
 !reports/final_report.pdf
 !reports/final_report.tex
