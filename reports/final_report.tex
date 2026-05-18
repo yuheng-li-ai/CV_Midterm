@@ -96,6 +96,41 @@ The SE-ResNet-18 result is a useful negative result. Although channel attention 
 
 Among the extensions, the pretrained ResNet-34 achieved the best test accuracy, 90.60\%. This suggests that moderate additional depth can improve fine-grained discrimination when pretrained features are available. Label smoothing and freeze-then-unfreeze gave smaller gains over the baseline. Label smoothing slightly improved test accuracy but lowered best validation accuracy, which suggests mild regularization rather than a decisive improvement. Freeze-then-unfreeze improved validation accuracy and test accuracy modestly, supporting the idea that stabilizing the new classifier head before full fine-tuning can reduce early optimization noise.
 
+\subsection{Classification Hyperparameter Grid Search}
+
+To address the hyperparameter-analysis requirement explicitly, I added a controlled grid search around the pretrained ResNet-18 baseline. The model architecture, data split, input size, batch size, backbone learning rate, and weight decay were held fixed. The search varied two optimization hyperparameters: the classifier-head learning rate and label smoothing. Each setting was trained for 8 epochs as a budgeted search, and validation accuracy was used as the selection criterion. The final test split was not used to choose the hyperparameter setting.
+
+\begin{table}[H]
+\centering
+\caption{Budgeted classification hyperparameter grid search. The best validation setting is highlighted.}
+\label{tab:classification_hparam_grid}
+\scriptsize
+\begin{tabular}{ccccc}
+\toprule
+Label smoothing & Head LR & Best epoch & Best Val & Test Acc.\\
+\midrule
+0.00 & $5{\times}10^{-4}$ & 3 & 0.9112 & 0.8803\\
+0.00 & $1{\times}10^{-3}$ & 3 & 0.9130 & 0.8760\\
+0.00 & $2{\times}10^{-3}$ & 5 & 0.9130 & 0.8880\\
+0.05 & $5{\times}10^{-4}$ & 5 & 0.9058 & 0.8863\\
+\textbf{0.05} & \textbf{$1{\times}10^{-3}$} & \textbf{5} & \textbf{0.9167} & \textbf{0.8880}\\
+0.05 & $2{\times}10^{-3}$ & 7 & 0.9094 & 0.8926\\
+0.10 & $5{\times}10^{-4}$ & 7 & 0.9076 & 0.8872\\
+0.10 & $1{\times}10^{-3}$ & 6 & 0.9130 & 0.8902\\
+0.10 & $2{\times}10^{-3}$ & 7 & 0.9076 & 0.8937\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The grid search shows that the classification result is not highly sensitive to these two hyperparameters within the tested range. The best validation result, 0.9167, occurs at label smoothing 0.05 and head learning rate $10^{-3}$, which is close to the original baseline design. Increasing label smoothing to 0.10 does not improve validation accuracy, suggesting that too much target softening can weaken the fine-grained breed signal. A larger head learning rate improves some test numbers but does not consistently improve validation performance, so I did not use it to redefine the final model. This supports a conservative conclusion: careful fine-tuning matters, but pretraining and backbone capacity remain the dominant factors in this task.
+
+\begin{center}
+\centering
+\includegraphics[width=\linewidth]{assets/classification_hparam_grid/val_accuracy_heatmap.png}
+\captionof{figure}{Validation accuracy heatmap for the classification hyperparameter grid. The narrow range of values indicates mild sensitivity compared with the much larger effect of ImageNet pretraining.}
+\label{fig:classification_hparam_heatmap}
+\end{center}
+
 \begin{center}
 \centering
 \includegraphics[width=\linewidth]{assets/classification_all_test_summary/test_accuracy.png}
