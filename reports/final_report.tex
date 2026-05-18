@@ -427,6 +427,680 @@ This project completed the required image recognition, semantic segmentation, ob
 
 The main limitation is that some extensions were constrained by time and compute. The YOLO11m run may have improved with a full 50-epoch schedule, and the video counting result lacks manually annotated ground truth. Nevertheless, the experiments provide quantitative comparisons, visual evidence, and failure analysis for all required components, while preserving reproducibility through the harness and configuration files.
 
+\appendix
+
+\section{Appendix A: Reproducibility and Harness Details}
+
+\subsection{Configuration-Driven Experiment Control}
+
+The harness was designed before the main experiments because the assignment contains three visually different tasks but still requires fair comparison. A direct collection of ad-hoc notebooks would make it easy to change the split, image size, augmentation, or checkpoint rule accidentally between runs. The project therefore uses a configuration-first interface. Each experiment is specified by a YAML file, and the command line only selects which configuration to run. This makes each result traceable to a concrete set of hyperparameters rather than to undocumented interactive choices.
+
+For classification, the configuration controls the architecture, pretraining flag, optional attention module, image size, batch size, validation ratio, optimizer, learning rates, weight decay, label smoothing, and checkpoint directory. For segmentation, it controls U-Net width, image size, loss function, Dice smoothing, batch size, and output visualization count. For detection, it controls YOLO model family, image size, batch size, worker count, pretrained weights, optimizer, learning rate, patience, and output directory. This separation between code and configuration is useful because it lets the report compare methods while keeping the data protocol fixed.
+
+\begin{table}[!htbp]
+\centering
+\caption{Main reproducibility controls enforced by the harness.}
+\label{tab:appendix_harness}
+\scriptsize
+\begin{tabular}{p{0.20\linewidth}p{0.70\linewidth}}
+\toprule
+Control & Purpose\\
+\midrule
+Fixed random seed & Makes train/validation splitting and stochastic training behavior more reproducible.\\
+Validation-best checkpoint & Prevents the final metric from depending on a lucky or unlucky last epoch.\\
+CSV metric log & Keeps every epoch available for later curve plotting and diagnosis.\\
+Separate run directories & Prevents baseline and extension artifacts from overwriting one another.\\
+Config snapshot in checkpoint & Keeps model weights tied to the exact training configuration.\\
+Report-ready assets & Ensures that figures are generated from saved metrics rather than manually edited.\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The most important rule is validation-based selection. Classification chooses the checkpoint with the highest validation accuracy, segmentation chooses the highest validation mIoU, and detection uses the best validation mAP50-95 reported by the YOLO trainer. This rule is intentionally conservative. It prevents a stronger-looking test number from being selected after looking at the test split, and it also avoids reporting a late checkpoint that has already started to overfit. The rule is particularly visible in classification, where the pretrained ResNet-18 baseline reaches its validation peak early, while the randomly initialized model is still improving at the end of the fixed 20-epoch budget.
+
+\subsection{Why a Unified Harness Matters}
+
+The three tasks expose different failure modes, but they share the same experimental risks. In classification, the major risk is accidentally comparing a pretrained model with a randomly initialized model under different augmentation or learning-rate schedules. In segmentation, the major risk is changing the mask resize operation or class mapping between losses. In detection, the risk is confusing VisDrone annotation conversion, image size, and model capacity. A unified harness does not remove all uncertainty, but it makes these assumptions explicit.
+
+The harness also makes negative results useful. SE attention did not improve the pretrained ResNet-18 baseline, Focal Loss did not beat Dice loss, and a high tracking confidence threshold reduced the line-crossing count. These results would be difficult to trust if each experiment were executed manually with different hidden settings. Because the harness fixes data splits, metrics, and output rules, the negative results become interpretable evidence rather than random training noise.
+
+\subsection{Compute-Budget Interpretation}
+
+Several extensions were selected under a practical compute budget rather than an exhaustive research setting. The classification grid search used 8 epochs per setting instead of a full 20-epoch schedule. This was sufficient to compare local sensitivity to label smoothing and head learning rate, but it was not intended to replace the final 20-epoch ResNet-34 result. The YOLO11m detector was stopped at epoch 36 because the report deadline was more important than chasing a marginal final improvement. These choices should be interpreted as budgeted experimental design rather than as claims of global optimality.
+
+\section{Appendix B: Classification Details Beyond the Main Text}
+
+\subsection{Input Pipeline and Feature Dimensions}
+
+The classification input pipeline first resizes every RGB image to $224 \times 224$. During training, horizontal flipping and color jitter are applied. Horizontal flipping tests whether the model can recognize a breed regardless of whether the animal faces left or right. Color jitter randomly perturbs brightness, contrast, and saturation, which reduces dependence on one lighting condition. The image is then converted to a tensor and normalized by ImageNet mean and standard deviation. This final normalization is not arbitrary: it aligns the target data distribution with the distribution expected by pretrained ResNet weights.
+
+For a batch of $B$ images, the tensor enters ResNet as $B \times 3 \times 224 \times 224$. The first convolution and max-pooling reduce the spatial size to $56 \times 56$. The four residual stages then produce features with channel counts 64, 128, 256, and 512, while the final spatial map is $7 \times 7$. Adaptive global average pooling converts the $B \times 512 \times 7 \times 7$ tensor into $B \times 512$. The original ImageNet classifier is replaced with a new linear layer whose output dimension is 37. These 37 raw scores are logits; the predicted class is the index of the largest logit.
+
+This dimensional view explains why the classification head can learn quickly. Only the final $512 \times 37$ mapping is randomly initialized, while most earlier filters already encode general visual primitives. The split learning-rate design follows this fact: the head uses a larger learning rate because it is new, while the backbone uses a smaller learning rate because its pretrained filters should be adapted but not destroyed.
+
+\subsection{Cross-Entropy and Label Smoothing}
+
+The ordinary cross-entropy loss for an example with true class $y$ and predicted softmax probability $p_y$ is
+\begin{equation}
+\mathcal{L}_{CE}=-\log p_y.
+\end{equation}
+With a one-hot target, the correct class has target probability 1 and every other class has target probability 0. This is a strong training signal, but it can make the model over-confident, especially in fine-grained recognition where two labels may be visually close. Label smoothing replaces the hard target distribution with a softened target distribution:
+\begin{equation}
+q_k =
+\begin{cases}
+1-\epsilon, & k=y,\\
+\epsilon/(K-1), & k\ne y,
+\end{cases}
+\end{equation}
+where $K=37$ and $\epsilon$ is the smoothing value. The loss becomes
+\begin{equation}
+\mathcal{L}_{LS}=-\sum_{k=1}^{K}q_k\log p_k.
+\end{equation}
+
+In this assignment, the original label-smoothing extension used $\epsilon=0.1$. The later grid search tested $\epsilon \in \{0,0.05,0.10\}$ together with three head learning rates. The best validation point was $\epsilon=0.05$ and head learning rate $10^{-3}$. However, the grid did not produce a dramatic improvement. This supports the interpretation that label smoothing is a secondary regularizer rather than the main source of performance.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth]{assets/classification_hparam_grid/test_accuracy_heatmap.png}
+\caption{Test accuracy heatmap for the classification hyperparameter grid. The best test value in this short grid occurs at label smoothing 0.10 and head learning rate $2\times10^{-3}$, but model selection should follow validation accuracy, not the test split. The mismatch between validation-best and test-best is a useful reminder that test performance should not be optimized directly.}
+\label{fig:appendix_classification_test_heatmap}
+\end{figure}
+
+\subsection{Why Pretraining Dominates the Grid}
+
+The grid search changed validation accuracy by roughly one percentage point. In contrast, ImageNet pretraining changed test accuracy from 40.15\% to about 89.40\%. The difference in scale matters. Hyperparameters can polish a strong representation, but they cannot fully compensate for a weak representation under a limited training budget. A randomly initialized ResNet-18 has millions of parameters and must learn low-level edge detectors, mid-level textures, object parts, and breed-specific features from the Oxford-IIIT Pet training set alone. A pretrained ResNet-18 starts from a representation already shaped by large-scale natural-image data.
+
+The failure cases also support this reading. The pretrained model is rarely confused about whether an image contains a pet. Its errors occur among visually similar breeds. This means the model has already solved the coarse recognition problem; remaining gains require better fine-grained cues. ResNet-34 helps because it increases backbone capacity while preserving the benefit of pretraining. SE attention, by contrast, adds randomly initialized channel reweighting on top of an already strong feature extractor. Without enough additional data, that new module does not automatically produce a cleaner breed representation.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.48\textwidth]{assets/classification_resnet18_random_analysis/test_mistakes.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{assets/classification_se_resnet18_analysis/test_mistakes.png}
+\caption{Additional classification error grids. Left: randomly initialized ResNet-18, which produces broader and less stable errors because it lacks transferable ImageNet features. Right: SE-ResNet-18, whose errors remain fine-grained despite adding attention. These qualitative grids explain why pretraining is a first-order factor while SE is not a guaranteed improvement.}
+\label{fig:appendix_classification_extra_mistakes}
+\end{figure*}
+
+\section{Appendix C: Segmentation Mathematics and Additional Evidence}
+
+\subsection{IoU, Dice, and Their Relationship}
+
+For a binary class mask, let $P$ be the predicted foreground set and $G$ be the ground-truth foreground set. The Intersection over Union is
+\begin{equation}
+IoU(P,G)=\frac{|P\cap G|}{|P\cup G|}
+=\frac{|P\cap G|}{|P|+|G|-|P\cap G|}.
+\end{equation}
+The Dice coefficient is
+\begin{equation}
+Dice(P,G)=\frac{2|P\cap G|}{|P|+|G|}.
+\end{equation}
+If $I=|P\cap G|$ and $U=|P\cup G|$, then $|P|+|G|=U+I$. Therefore
+\begin{equation}
+Dice=\frac{2I}{U+I}
+=\frac{2(I/U)}{1+(I/U)}
+=\frac{2IoU}{1+IoU}.
+\end{equation}
+This monotonic relationship means that maximizing Dice also tends to maximize IoU for a single class. For multiclass segmentation, the relationship is not perfectly identical because scores are averaged over classes and computed from soft probabilities during training, but the direction is still strongly aligned. This is why Dice loss is more directly related to mIoU than pixel-wise cross-entropy.
+
+Cross-entropy asks whether each pixel is assigned the correct class. Dice asks whether the predicted region overlaps the true region. These are related but not identical objectives. A model can improve many easy background pixels under cross-entropy without significantly improving object overlap. In a trimap task, the boundary class is small and ambiguous, so overlap-based feedback is valuable. The observed result--Dice outperforming CE and CE+Dice--is therefore consistent with the metric geometry.
+
+\subsection{Smooth Dice and Numerical Stability}
+
+The implemented Dice loss uses a smoothing constant $s$:
+\begin{equation}
+Dice_c=\frac{2\sum_i p_{i,c}y_{i,c}+s}{\sum_i p_{i,c}+\sum_i y_{i,c}+s}.
+\end{equation}
+The smoothing term prevents numerical instability when a class is absent or nearly absent in a batch. A larger $s$ also makes the fraction less sensitive when masks are small. The smooth-0.1 extension reduces this damping, making the objective respond more strongly to small overlap changes. In the results, smooth 0.1 slightly improved best validation mIoU but did not improve test mIoU. This suggests that the default smooth value was not the bottleneck.
+
+\subsection{Why Focal Loss Did Not Help}
+
+Focal Loss reweights cross-entropy by a factor based on prediction difficulty:
+\begin{equation}
+\mathcal{L}_{Focal}=-(1-p_t)^\gamma \log(p_t),
+\end{equation}
+where $p_t$ is the predicted probability of the true class. Easy pixels with high $p_t$ receive small weights, while hard pixels receive larger weights. This is attractive for imbalanced problems, but hard pixels are not always reliable pixels. In pet trimap segmentation, many hard pixels lie on fur boundaries, ears, legs, shadows, and low-contrast transitions. Some are genuinely ambiguous even to a human observer. Increasing their weight can focus learning on noisy boundaries rather than on stable region overlap.
+
+This explains why Focal Loss was competitive with CE but below Dice. The segmentation problem is not merely a class-imbalance problem; it is an overlap and boundary-quality problem. Dice loss directly rewards global region overlap, while Focal Loss still relies on pixel-wise classification and only changes the weighting of pixels.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth,height=0.72\textheight,keepaspectratio]{assets/segmentation_60_loss_mask_grid.png}
+\caption{Additional qualitative comparison across the three required segmentation losses. This is a tall diagnostic grid, so it is kept as a single-column float rather than being stretched across both columns. Dice usually produces the cleanest object body, while CE and CE+Dice can differ around boundary pixels.}
+\label{fig:appendix_segmentation_required_grid}
+\end{figure}
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=\linewidth,height=0.72\textheight,keepaspectratio]{assets/segmentation_extension_mask_grid.png}
+\caption{Additional qualitative comparison for segmentation extensions. The two Dice variants are visually similar, consistent with the small numerical difference. Focal Loss does not remove the dominant boundary errors, which supports the interpretation that hard-pixel weighting is not enough for trimap contour refinement.}
+\label{fig:appendix_segmentation_extension_grid}
+\end{figure}
+
+\subsection{Boundary Ambiguity and Evaluation}
+
+The Oxford-IIIT Pet trimap annotations contain a boundary class that is visually thin and semantically ambiguous. A boundary pixel may lie near fur, shadow, motion blur, or background texture. When the image is resized to $224 \times 224$, fine hair and edge details are further compressed. This makes perfect boundary agreement unrealistic. The qualitative results show that most large body regions are captured correctly, but errors remain along the contour. This is exactly the region where mIoU is sensitive: a thin boundary error can reduce the boundary-class IoU even if the pet body looks visually acceptable.
+
+Future improvements should therefore target boundary modeling rather than only changing the global loss. Possible directions include boundary-aware auxiliary heads, higher input resolution, deep supervision at decoder stages, or a CRF-like post-processing step. These were not used because the assignment required a controlled U-Net comparison, and additional post-processing would make the loss comparison less clean.
+
+\section{Appendix D: Detection Metrics and Deeper Interpretation}
+
+\subsection{IoU and Matching}
+
+Object detection evaluation begins by matching predicted boxes to ground-truth boxes. For a predicted box $B_p$ and a ground-truth box $B_g$, the intersection-over-union is
+\begin{equation}
+IoU(B_p,B_g)=\frac{|B_p\cap B_g|}{|B_p\cup B_g|}.
+\end{equation}
+A prediction is counted as a true positive if it has the correct class, exceeds the IoU threshold, and is matched to an unused ground-truth box. Duplicate predictions for the same object become false positives after the first match. Ground-truth boxes without a matched prediction become false negatives. This matching rule is stricter than simply drawing plausible boxes; it requires both classification and localization.
+
+At a fixed confidence threshold, precision and recall are
+\begin{equation}
+Precision=\frac{TP}{TP+FP}, \qquad Recall=\frac{TP}{TP+FN}.
+\end{equation}
+Average Precision is computed by sorting predictions by confidence and integrating the precision-recall curve. Conceptually,
+\begin{equation}
+AP=\int_0^1 P(R)dR,
+\end{equation}
+where $P(R)$ is precision as a function of recall. In practice, modern evaluation uses discrete interpolation over the confidence-ranked detections.
+
+\subsection{mAP50 and mAP50-95}
+
+mAP50 uses an IoU threshold of 0.50. A detection is correct if the predicted box overlaps the target by at least 50\%. This is relatively forgiving and is useful for judging whether the model found the object. mAP50-95 averages AP over thresholds from 0.50 to 0.95, usually in steps of 0.05:
+\begin{equation}
+mAP50\text{-}95=\frac{1}{10}\sum_{t\in\{0.50,0.55,\ldots,0.95\}} AP_t.
+\end{equation}
+This is much stricter because high IoU thresholds require precise localization. Small objects make this especially difficult. If a pedestrian is only a few pixels wide, a small coordinate error can greatly reduce IoU. Therefore, the gap between mAP50 and mAP50-95 is expected on VisDrone.
+
+The YOLO11m result, 0.5356 mAP50 and 0.3310 mAP50-95, should be read through this lens. The detector often finds objects at a loose IoU threshold, but precise localization remains difficult for tiny, occluded, or dense objects. The improvement over YOLOv8n and YOLOv8s is meaningful because it raises both loose detection quality and stricter localization quality.
+
+\subsection{Why Resolution Helps VisDrone}
+
+For an ordinary close-range image, a car may occupy hundreds of pixels. In VisDrone, the same class may appear as a small rectangle in a crowded road scene. If the model input is resized to 640, small objects can shrink to only a few feature-map cells. Raising the input size to 960 preserves more object detail before the network downsamples. This does not guarantee perfect detection, but it increases the chance that small targets survive the early convolutional stages.
+
+The downside is computation. Larger images increase memory usage, training time, and inference cost. In this project the available RTX A6000 memory allowed YOLO11m at 960 with batch size 16. This was a practical compromise: strong enough to improve mAP substantially, but still feasible under the deadline.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.48\textwidth]{assets/detection_yolov8n_results.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{assets/detection_yolov8s_results.png}
+\caption{Side-by-side detector training summaries for YOLOv8n and YOLOv8s. The larger YOLOv8s improves the entire metric curve, but recall remains harder than precision because many VisDrone targets are small, occluded, or low contrast.}
+\label{fig:appendix_detection_v8_side}
+\end{figure*}
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.48\textwidth]{assets/detection_yolo11m_img960_metrics.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{assets/detection_yolo11m_img960_losses.png}
+\caption{YOLO11m at image size 960. The metric curves and loss curves show that the model was still learning when manually stopped at epoch 36. The reported score is therefore a deadline-constrained result rather than a fully saturated training run.}
+\label{fig:appendix_detection_yolo11m}
+\end{figure*}
+
+\subsection{Detection Error Sources}
+
+The major detection error sources are small scale, inter-class similarity, occlusion, and annotation density. Pedestrian and people classes can be hard to distinguish at distance. Bicycle, motor, and tricycle categories can overlap visually when riders and vehicles are partially hidden. Cars and vans are easier than tiny pedestrians, but dense traffic and roof-view perspective can still cause missed boxes. These failure modes explain why increasing model capacity improves the result but does not make mAP50-95 close to ordinary close-range detection benchmarks.
+
+The detection results should therefore be judged relative to VisDrone difficulty, not relative to simple object detection tasks. A mAP50-95 of 0.3310 is not a high absolute number, but it is a strong improvement over the YOLOv8n baseline in this specific pipeline, and it enables more reliable video tracking than the smaller detectors.
+
+\section{Appendix E: Tracking Geometry and Counting Reliability}
+
+\subsection{Signed-Side Line Crossing}
+
+The line-crossing algorithm uses a simple geometric test. Let the counting line have endpoints $A=(x_1,y_1)$ and $B=(x_2,y_2)$. For an object center $C=(x,y)$, define the signed side value
+\begin{equation}
+s(C)=(x_2-x_1)(y-y_1)-(y_2-y_1)(x-x_1).
+\end{equation}
+This is the 2D cross product between the line direction and the vector from the first line endpoint to the object center. If $s(C)>0$, the point is on one side of the line; if $s(C)<0$, it is on the other side. A crossing is detected when the sign changes between two frames for the same track ID:
+\begin{equation}
+s(C_{t-1})s(C_t)<0.
+\end{equation}
+The implementation counts each track ID at most once. This prevents one stable object from being counted repeatedly after it crosses the line.
+
+The method is transparent but not perfect. It assumes that the tracked box center is a stable proxy for object position. For large vehicles or partially occluded pedestrians, the bounding-box center can jump even when the physical object has not clearly crossed. It also assumes that the same physical object keeps the same track ID. If the tracker loses the object and creates a new ID, duplicate or missed counts can occur.
+
+\subsection{Confidence Threshold Effects}
+
+The tracking comparison shows that confidence threshold is not a cosmetic parameter. At confidence 0.50, ByteTrack counts only 5 crossings. At confidence 0.25, it counts 11 crossings. The lower threshold retains weak detections of small, rainy, and partially occluded objects near the line. This improves recall for counting, but it also risks short-lived false tracks. The best threshold for traffic counting is therefore not necessarily the threshold that produces the cleanest-looking single-frame detections.
+
+This explains why the report treats the final count as an algorithmic estimate. Without manually annotated video ground truth, it is not possible to say whether 11 is the exact real-world count. What the experiment does show is that the pipeline behaves consistently: detector strength affects track continuity, tracker choice affects ID association, and confidence threshold affects the number of observable crossings.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.245\textwidth]{assets/video_preview/frame_000000.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/video_preview/frame_000309.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/video_preview/frame_000618.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/video_preview/frame_000927.jpg}
+\caption{Preview frames from the uploaded video. The scene contains rain, road reflections, moving vehicles, pedestrians, and mixed traffic. These conditions are suitable for demonstrating tracking and line-crossing behavior because objects move, overlap, and sometimes become partially hidden.}
+\label{fig:appendix_video_preview}
+\end{figure*}
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_350.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_351.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_352.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_353.jpg}
+\caption{Occlusion-focused tracking frames repeated here for closer appendix analysis. The four frames show why stable tracking is harder than single-frame detection: an object may be detectable in one frame, partly hidden in the next, and then reappear with a different visual context.}
+\label{fig:appendix_tracking_occlusion}
+\end{figure*}
+
+\subsection{What Would Be Needed for Production Counting}
+
+A production traffic-counting system would need several additions beyond this assignment. First, manually annotated video ground truth would be needed to measure count accuracy. Second, direction-aware counting would be needed to separate incoming and outgoing traffic. Third, camera calibration or a homography would help map the image line to a real-world road line. Fourth, re-identification or stronger tracklet stitching would reduce duplicate counting after long occlusions. These additions are beyond the required homework scope, but they clarify the difference between a reproducible academic demonstration and a deployable traffic-measurement system.
+
+\section{Appendix F: Additional Cross-Task Analysis}
+
+\subsection{Metric Alignment}
+
+The strongest method in each task is the method whose training signal or model capacity best matches the evaluation bottleneck. Classification is evaluated by top-1 breed accuracy, but the dominant difficulty is fine-grained representation. Pretraining and moderate backbone depth address this directly. Segmentation is evaluated by mIoU, and Dice loss directly optimizes overlap, which explains its advantage over cross-entropy. Detection is evaluated by mAP, and VisDrone is dominated by tiny-object visibility and localization; higher input resolution and a stronger detector address this problem more directly than small-model efficiency.
+
+This metric alignment also explains the negative results. SE attention sounds appropriate for fine-grained classification, but it does not guarantee a better representation when the pretrained baseline is already strong. Focal Loss sounds appropriate for hard pixels, but many hard pixels are ambiguous boundaries, so emphasizing them does not necessarily improve region IoU. A high detection confidence threshold sounds cleaner, but it reduces recall and line-crossing counts in rainy traffic video. The experiments therefore support a cautious design principle: a method should be judged by whether it targets the actual bottleneck, not by whether it is generally popular.
+
+\subsection{Ablation Strength and Fairness}
+
+Not all comparisons in this report have the same causal strength. The classification grid search is a controlled hyperparameter analysis because only two hyperparameters change while the architecture and data protocol remain fixed. The segmentation loss comparison is also relatively controlled because the U-Net and data preprocessing remain fixed while the loss changes. The YOLO11m@960 comparison is less isolated because model family and image size change together. This does not make the result invalid, but it changes the claim. The correct claim is not that YOLO11m alone explains the improvement; the correct claim is that the practical combination of a stronger one-stage detector and higher input resolution is substantially better for this VisDrone pipeline.
+
+This distinction matters in a scientific report. A good extension result should not be overstated. When a comparison is controlled, the conclusion can be narrow and causal. When multiple factors change, the conclusion should be practical rather than causal. I used this rule throughout the discussion to avoid turning the report into a list of unqualified improvements.
+
+\subsection{Failure Modes as Evidence}
+
+The most informative evidence is not only the best score. Classification mistakes reveal that the model is confused among similar breeds, which supports the fine-grained representation interpretation. Segmentation error maps reveal boundary errors, which supports the Dice and boundary-analysis interpretation. Detection and tracking frames reveal small targets, occlusion, and threshold sensitivity, which support the VisDrone difficulty interpretation. These failure modes connect the numerical results to visual behavior.
+
+In this sense, the report's negative results are not failures of the project. They are evidence about the problem structure. Random initialization shows that the target dataset is not enough to train a deep classifier from scratch under the assignment budget. SE attention shows that extra modules can overcomplicate a strong pretrained baseline. Focal Loss shows that hard-pixel emphasis is not the same as boundary refinement. High tracking confidence shows that visual cleanliness can reduce counting recall. Each negative result narrows the set of explanations and makes the final conclusions more defensible.
+
+\subsection{Recommended Future Experiments}
+
+If more compute were available, the most useful classification experiment would be a higher-resolution crop or part-aware model for confusing breed groups. The most useful segmentation experiment would be a boundary-aware auxiliary loss or a higher-resolution U-Net decoder. The most useful detection experiment would be a controlled two-factor study: YOLO11m at 640 versus 960, and YOLOv8s at 640 versus 960, so that model capacity and resolution could be separated. The most useful tracking experiment would be manual annotation of the 30-second video, enabling true count accuracy, ID-switch rate, and direction-specific counting metrics.
+
+These future experiments are deliberately tied to observed errors. They are not generic suggestions. They follow directly from where the current models fail: subtle breed cues, trimap boundaries, tiny aerial targets, and rainy-video track continuity.
+
+\section{Appendix G: Architecture and Tensor-Dimension Trace}
+
+\subsection{Classification Forward Path}
+
+The classification implementation uses torchvision ResNet backbones and replaces only the final fully connected layer. For the main ResNet-18 baseline, the input tensor has shape $B\times3\times224\times224$. The first $7\times7$ convolution with stride 2 reduces the spatial size to $112\times112$, max pooling reduces it again to $56\times56$, and the four residual stages then produce $56$, $28$, $14$, and $7$ pixel feature maps. Global average pooling collapses the final $B\times512\times7\times7$ tensor into $B\times512$, and the new classifier maps it to $B\times37$ logits.
+
+\begin{table*}[!htbp]
+\centering
+\caption{Tensor dimensions for the ResNet-18 classification baseline with batch size $B$.}
+\label{tab:appendix_resnet_dims}
+\begin{tabular}{lll}
+\toprule
+Stage & Output shape & Interpretation\\
+\midrule
+Input & $B\times3\times224\times224$ & normalized RGB image\\
+Conv stem & $B\times64\times112\times112$ & low-level edges/textures\\
+MaxPool & $B\times64\times56\times56$ & early spatial compression\\
+Layer1 & $B\times64\times56\times56$ & shallow residual features\\
+Layer2 & $B\times128\times28\times28$ & mid-level texture/parts\\
+Layer3 & $B\times256\times14\times14$ & object-level cues\\
+Layer4 & $B\times512\times7\times7$ & breed-discriminative features\\
+AvgPool & $B\times512$ & global descriptor\\
+FC & $B\times37$ & breed logits\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+This trace explains why the input size is not an arbitrary cosmetic choice. At $224\times224$, the final feature grid is only $7\times7$. The model must preserve discriminative breed evidence through several downsampling stages. If the image crop loses the face, ears, or coat pattern, the final descriptor cannot recover that information. This is one reason the classification errors are mostly between visually similar breeds rather than between cats and dogs.
+
+The SE extension modifies the forward path after Layer4. It first applies global average pooling to $B\times512\times7\times7$, producing one scalar descriptor per channel. A two-layer MLP compresses the 512 channels to 32 hidden units because the reduction ratio is 16, then expands back to 512 and applies a sigmoid. The resulting $B\times512\times1\times1$ weights multiply the Layer4 feature map channel by channel. In other words, SE does not add new spatial reasoning; it only learns which channels should be emphasized. This is why the SE result should not be interpreted as a failed attention mechanism in general. It is specifically evidence that channel recalibration after a strong pretrained Layer4 was not the limiting factor in this dataset and training budget.
+
+\subsection{Segmentation Forward Path}
+
+The U-Net is implemented from scratch with base channel count 32. Every encoder block is a DoubleConv module: Conv-BN-ReLU followed by another Conv-BN-ReLU. MaxPool halves the spatial resolution before each deeper stage. The decoder uses transposed convolutions to upsample and then concatenates the corresponding encoder feature map through a skip connection. For input size $224\times224$, all downsampling and upsampling operations align exactly.
+
+\begin{table*}[!htbp]
+\centering
+\caption{Tensor dimensions for the implemented U-Net. The concatenation step is the key difference from a plain encoder-decoder: high-resolution encoder features are reused by the decoder.}
+\label{tab:appendix_unet_dims}
+\begin{tabular}{llll}
+\toprule
+Stage & Operation & Output shape & Role\\
+\midrule
+Input & image tensor & $B\times3\times224\times224$ & RGB pet image\\
+Enc1 & DoubleConv & $B\times32\times224\times224$ & fine edges and color\\
+Enc2 & Pool + DoubleConv & $B\times64\times112\times112$ & local parts\\
+Enc3 & Pool + DoubleConv & $B\times128\times56\times56$ & larger body regions\\
+Enc4 & Pool + DoubleConv & $B\times256\times28\times28$ & coarse object structure\\
+Bottleneck & Pool + DoubleConv & $B\times512\times14\times14$ & global context\\
+Dec4 & Up + concat + DoubleConv & $B\times256\times28\times28$ & recover coarse mask\\
+Dec3 & Up + concat + DoubleConv & $B\times128\times56\times56$ & refine object layout\\
+Dec2 & Up + concat + DoubleConv & $B\times64\times112\times112$ & refine boundaries\\
+Dec1 & Up + concat + DoubleConv & $B\times32\times224\times224$ & pixel-level details\\
+Head & $1\times1$ convolution & $B\times3\times224\times224$ & trimap logits\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The dimension trace is also useful for interpreting the loss results. Cross-entropy treats each output pixel independently after the final $1\times1$ head. Dice loss aggregates probabilities over all pixels of each class before computing the overlap ratio. Therefore, even though both losses supervise the same $B\times3\times224\times224$ logits, they send different gradient signals through the decoder. CE provides dense local feedback, while Dice provides a global region-level signal. The better mIoU of Dice indicates that the bottleneck was not simply assigning every pixel a class, but forming coherent pet, background, and boundary regions.
+
+\subsection{Detection Forward Path at a High Level}
+
+The detection models are one-stage YOLO detectors. Unlike two-stage detectors, they do not first propose regions and then classify them in a separate second stage. Instead, the backbone extracts multiscale features, the neck fuses features across scales, and the detection head predicts boxes, objectness-related confidence, and class probabilities directly. For VisDrone, multiscale prediction is essential: large vehicles may be represented on coarse feature maps, while pedestrians and bicycles depend on finer feature maps.
+
+The three detector configurations should be understood as a practical capacity-resolution ladder. YOLOv8n at 640 is the lightweight baseline. YOLOv8s at 640 increases capacity but keeps the same input resolution, so it tests whether a larger model helps under the same image size. YOLO11m at 960 changes both model family/capacity and resolution, so it is not a perfectly isolated ablation. It is an engineering extension: use a stronger current one-stage detector and preserve more pixels for tiny aerial objects. This distinction matters because the report should not claim that architecture alone caused the gain. The defensible claim is that the YOLO11m@960 configuration is the best practical detector trained in this project.
+
+\section{Appendix H: Learning-Curve Diagnostics}
+
+\subsection{Reading Curves Instead of Only Final Scores}
+
+The report uses learning curves as evidence for optimization behavior. A validation curve that peaks early and then flattens suggests that the last epoch is not necessarily the best model. A training curve that continues improving while validation stagnates suggests overfitting or insufficient regularization. A curve where both training and validation remain low suggests underfitting or insufficient representation. This is why the harness always saves the best validation checkpoint and why the report distinguishes best epoch from final epoch.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.32\textwidth]{runs/classification/resnet18_label_smoothing_extension/curves.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{runs/classification/resnet18_freeze_then_unfreeze_extension/curves.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{runs/classification/resnet34_imagenet_capacity_extension/curves.png}
+\caption{Additional classification extension curves. Label smoothing mainly regularizes confidence, freeze-then-unfreeze stabilizes early optimization by first training the new head, and ResNet-34 improves capacity while preserving ImageNet transfer. These curves explain why the final ranking is not determined by one isolated epoch.}
+\label{fig:appendix_classification_extension_curves}
+\end{figure*}
+
+In classification, the random ResNet-18 is the clearest underfitting case. The model learns from the training set, but validation accuracy remains far below pretrained models. The SE model does not show a catastrophic optimization failure; it simply does not improve generalization. This difference is important. A failed optimization run would suggest a training bug or bad learning rate, while a stable but non-improving run suggests that the modification is not targeting the bottleneck.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.32\textwidth]{runs/classification_hparam_grid/resnet18_ls0_headlr_5e-4/curves.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{runs/classification_hparam_grid/resnet18_ls005_headlr_1e-3/curves.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{runs/classification_hparam_grid/resnet18_ls01_headlr_2e-3/curves.png}
+\caption{Representative curves from the classification hyperparameter grid. The middle setting, label smoothing 0.05 and head learning rate $10^{-3}$, was selected by validation accuracy. The low-head-LR setting adapts the classifier more slowly, while the high-smoothing/high-LR setting does not produce a reliable improvement.}
+\label{fig:appendix_grid_curves}
+\end{figure*}
+
+The grid search also clarifies a methodological issue. Hyperparameter tuning can easily overfit the validation set if too many combinations are tried. I therefore used a small and interpretable $3\times3$ grid rather than a large open-ended search. The result is useful even though it does not beat ResNet-34: it demonstrates that the baseline learning-rate and label-smoothing choices were not arbitrary, and it shows that modest smoothing can be beneficial when the model is already pretrained.
+
+\subsection{Segmentation Curves and Loss Behavior}
+
+The segmentation curves are more subtle than classification curves because loss values are not directly comparable across CE, Dice, and Focal objectives. A lower Dice loss and a lower CE loss are not on the same numerical scale. Therefore, mIoU is the shared comparison axis. This is also why the report plots test mIoU summaries separately from loss curves.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.32\textwidth]{assets/segmentation_60_summary/best_val_miou.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{assets/segmentation_extensions_summary/best_val_miou.png}
+\hfill
+\includegraphics[width=0.32\textwidth]{assets/segmentation_extensions_test_summary/test_miou.png}
+\caption{Segmentation metric summaries. Dice is the best required loss, and the smooth-0.1 extension slightly improves validation mIoU but not test mIoU. This is a useful example where validation improvement is real but not large enough to change the final practical conclusion.}
+\label{fig:appendix_segmentation_summaries}
+\end{figure*}
+
+The extension result is deliberately interpreted conservatively. Smooth Dice 0.1 gives the highest validation mIoU, but Dice with the default smoothing gives the highest test mIoU. These two results are close enough that they should not be described as a decisive superiority of one smoothing constant. A more defensible interpretation is that Dice-style overlap supervision is robustly better than pure CE, while the exact smoothing constant is a second-order detail under this setup.
+
+\section{Appendix I: Additional Visual Evidence}
+
+\subsection{Segmentation Prediction Examples}
+
+The following masks show individual predictions rather than pre-arranged comparison grids. They are useful because they reveal a repeated error pattern: the object body is usually well segmented, while thin structures and boundaries remain difficult. This supports the earlier mathematical argument that mIoU rewards overlap but still penalizes boundary mismatch, especially for the boundary class.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/000_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/000_pred.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/001_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/001_pred.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/002_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/002_pred.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/003_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_dice_60/visualizations/003_pred.png}
+\caption{Additional Dice-U-Net target/prediction mask pairs. Each adjacent pair shows target then prediction. The compact layout keeps the masks within the page width while allowing several examples to be compared at once.}
+\label{fig:appendix_dice_masks_extra}
+\end{figure*}
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/000_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/000_pred.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/001_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/001_pred.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/002_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/002_pred.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/003_target.png}
+\includegraphics[width=0.115\textwidth]{runs/segmentation/unet_focal_60/visualizations/003_pred.png}
+\caption{Additional Focal-U-Net target/prediction mask pairs. Focal Loss changes which pixels receive stronger gradients, but the dominant boundary ambiguity remains visible.}
+\label{fig:appendix_focal_masks_extra}
+\end{figure*}
+
+\subsection{Detection PR Curves and Confusion Matrix}
+
+The YOLOv8s diagnostic plots help explain the baseline extension before YOLO11m. The precision-recall curve summarizes how the detector behaves as the confidence threshold changes. A model with high precision at low recall can be visually clean but miss many objects. A model with higher recall but low precision may overproduce boxes and harm tracking. For traffic counting, the useful operating point is not necessarily the one with the highest single-frame visual neatness; it is the point that preserves enough true objects for stable tracks without creating too many false trajectories.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.48\textwidth]{runs/detection/yolov8s_visdrone_capacity_extension/BoxPR_curve.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{runs/detection/yolov8s_visdrone_capacity_extension/confusion_matrix_normalized.png}
+\caption{YOLOv8s precision-recall curve and normalized confusion matrix. The PR curve shows the threshold trade-off, while the confusion matrix highlights class-level ambiguity in dense aerial scenes.}
+\label{fig:appendix_yolov8s_pr_confusion}
+\end{figure*}
+
+The normalized confusion matrix should not be read like a classification confusion matrix with one object per image. Detection errors combine missed objects, duplicate boxes, class confusion, and localization failure. For small road users, class errors can occur because the visible evidence is tiny: a pedestrian, rider, bicycle, and motorbike may occupy only a small cluster of pixels. This again supports the choice of higher resolution for the strongest detector.
+
+\subsection{Tracking Frames and Counting Interpretation}
+
+Line-crossing counting is sensitive to frame-to-frame continuity. A single missed box may not matter if the tracker bridges it, but repeated misses near the counting line can prevent a crossing from being recorded. Conversely, a false short track that crosses the line can inflate the count. Therefore, the reported count should be interpreted as a reproducible pipeline estimate, not as manually verified ground truth.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_630.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_631.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_632.jpg}
+\hfill
+\includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_633.jpg}
+\caption{Additional crossing-focused frames. The sequence shows why counting depends on both detector confidence and ID continuity: the object must remain detected and associated while its center moves across the virtual line.}
+\label{fig:appendix_tracking_crossing_extra}
+\end{figure*}
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.19\textwidth]{assets/video_preview/frame_000000.jpg}
+\hfill
+\includegraphics[width=0.19\textwidth]{assets/video_preview/frame_000309.jpg}
+\hfill
+\includegraphics[width=0.19\textwidth]{assets/video_preview/frame_000618.jpg}
+\hfill
+\includegraphics[width=0.19\textwidth]{assets/video_preview/frame_000927.jpg}
+\hfill
+\includegraphics[width=0.19\textwidth]{assets/video_preview/frame_001235.jpg}
+\caption{Five preview frames across the source video. The visual conditions change across time because of rain, reflections, object density, and camera viewpoint. This justifies evaluating tracking over a 30-second segment rather than a single attractive frame.}
+\label{fig:appendix_video_preview_five}
+\end{figure*}
+
+\section{Appendix J: Metric Derivations and Practical Consequences}
+
+\subsection{Why Dice Aligns Better with mIoU}
+
+For one class, Dice and IoU are monotonically related by $Dice=2IoU/(1+IoU)$. Taking the derivative with respect to IoU gives
+\begin{equation}
+\frac{dDice}{dIoU}=\frac{2}{(1+IoU)^2}>0.
+\end{equation}
+Thus, any improvement in IoU improves Dice, although the slope decreases as IoU becomes high. This derivative explains why Dice loss is especially useful when overlap is still moderate: it gives strong feedback for improving region overlap early and in the middle of training. Cross-entropy does not have this direct overlap geometry. It can reduce loss by becoming more confident on many easy pixels even if the predicted object boundary does not align much better with the ground truth.
+
+For multiclass segmentation, the implementation computes softmax probabilities, converts the target to one-hot maps, computes class-wise Dice, and averages over classes. This has two practical effects. First, every class contributes to the loss even if its pixel count is smaller. Second, the loss sees the predicted probability mass over the whole image, not only independent pixel decisions. These properties are well matched to mIoU, which also averages region overlap across classes.
+
+\subsection{How mAP Penalizes Ranking and Localization}
+
+Average Precision is not simply the precision at one confidence threshold. It evaluates the whole ranked list of detections. Suppose predictions are sorted from highest to lowest confidence. As the threshold moves down this list, recall usually increases because more boxes are accepted, while precision may decrease because false positives enter the set. AP summarizes the area under this precision-recall behavior. A detector can therefore lose AP in two ways: it may fail to detect objects at all, or it may rank false detections above true detections.
+
+The IoU threshold adds another layer. At mAP50, a roughly correct box can count as correct. At mAP75 or mAP95, the same box may become a false positive if its localization is slightly off. In aerial images, small boxes make this severe. Moving a box boundary by only a few pixels can change IoU substantially. This is why YOLO11m's mAP50 of 0.5356 and mAP50-95 of 0.3310 should be reported together. The first says the model often finds the object; the second says precise localization across strict thresholds remains hard.
+
+\subsection{Why Test Results Should Not Guide Model Selection}
+
+The harness keeps validation and test roles separate. Validation is used repeatedly during development: choosing best epoch, selecting hyperparameters, and comparing extensions. Test is used after the choice is made. If the test set were used to choose label smoothing, learning rate, or the best checkpoint, the reported test accuracy would no longer be an unbiased estimate of generalization. This distinction is especially important in this project because many experiments were run. More experiments increase the chance that one setting performs well by chance on a particular split.
+
+This is also why some appendix analysis is deliberately cautious. For example, the classification grid identifies a good ResNet-18 hyperparameter setting, but the final classification conclusion still favors ResNet-34 because it has the best held-out test result among trained models. For segmentation, smooth Dice has the best validation mIoU but not the best test mIoU, so the conclusion emphasizes the robust advantage of Dice-style loss rather than claiming that smooth 0.1 is universally better. For detection, YOLO11m@960 is the strongest practical configuration, but the analysis does not isolate whether the gain comes more from architecture, capacity, or input size.
+
+\section{Appendix K: Limitations and Threats to Validity}
+
+\subsection{Compute Budget and Early Stopping}
+
+The detection run was manually truncated at epoch 36 because of time constraints. The curves suggested that additional training might still improve the result. This does not invalidate the comparison, because the recorded YOLO11m score already exceeds YOLOv8n and YOLOv8s substantially, but it does limit the strength of claims about final convergence. The correct statement is that YOLO11m@960 was the strongest model obtained under the project budget, not necessarily the strongest score that the configuration could ever reach.
+
+The classification and segmentation experiments are less affected by this limitation because they completed their planned budgets and used validation-best checkpoints. However, even there, compute budget shapes the conclusions. Random ResNet-18 might improve with much longer training, but the assignment-relevant conclusion is about the realistic homework budget. Under that budget, pretraining is clearly necessary for high accuracy.
+
+\subsection{Dataset and Annotation Limitations}
+
+Oxford-IIIT Pet classification labels are breed labels, so the task rewards fine-grained appearance rather than coarse object presence. Some mistakes may be understandable even if the predicted class is visually similar to the label. The segmentation trimaps contain a boundary class that is intrinsically ambiguous after resizing. VisDrone annotations are dense and small, and the video tracking clip was not manually annotated frame by frame. These dataset properties affect what the metrics mean.
+
+For this reason, the report combines scalar metrics with qualitative figures. A single number cannot reveal whether errors are random, boundary-focused, class-confusion-focused, or caused by occlusion. The visual evidence shows that the main errors are structured. Classification errors occur among similar breeds, segmentation errors concentrate around boundaries, detection errors occur for small and occluded objects, and tracking errors are tied to ID continuity. Structured errors are more scientifically useful than unexplained low scores because they indicate where future work should focus.
+
+\subsection{Reproducibility Versus Exhaustiveness}
+
+The project prioritizes reproducible harness-based experimentation over an exhaustive search of every possible model. This trade-off is intentional. A large collection of uncontrolled experiments would make the report longer but less convincing. Instead, each required task has a clear baseline, a controlled or partially controlled extension, saved logs, saved checkpoints, and visual outputs. The appendix adds details not to inflate the result, but to expose the reasoning behind the conclusions.
+
+The main remaining threat to validity is that some extensions change more than one factor. The YOLO11m@960 experiment changes both model and resolution. The ResNet-34 experiment changes depth while preserving the pretrained ResNet family. These are still useful engineering comparisons, but they should be labelled as practical improvements rather than pure causal ablations. This distinction is now reflected explicitly in the discussion.
+
+\section{Appendix L: Quantitative Delta Analysis}
+
+\subsection{Absolute and Relative Improvements}
+
+Raw scores are necessary, but score deltas make the experimental conclusions easier to compare. For a baseline score $s_b$ and an improved score $s_i$, the absolute improvement is
+\begin{equation}
+\Delta_{abs}=s_i-s_b,
+\end{equation}
+and the relative improvement over the baseline is
+\begin{equation}
+\Delta_{rel}=\frac{s_i-s_b}{s_b}.
+\end{equation}
+The absolute number is usually more meaningful for final reporting because metrics such as accuracy, mIoU, and mAP already live on a bounded $[0,1]$ scale. The relative number is useful for understanding how much the baseline error or weakness has been reduced, but it can exaggerate improvements when the baseline is very small.
+
+\begin{table*}[!htbp]
+\centering
+\caption{Selected score deltas across tasks. The numbers show that the largest project-level gains came from matching the method to the dominant bottleneck: pretraining for classification, overlap loss for segmentation, and stronger high-resolution detection for VisDrone.}
+\label{tab:appendix_delta_analysis}
+\begin{tabular}{lllll}
+\toprule
+Task & Comparison & Metric & Absolute delta & Interpretation\\
+\midrule
+Classification & ResNet-18 pretrained vs random & test acc. & $+0.4925$ & transfer learning dominates\\
+Classification & ResNet-34 vs ResNet-18 & test acc. & $+0.0120$ & moderate capacity gain\\
+Classification & grid best vs baseline & val acc. & $-0.0018$ & grid confirms baseline is strong\\
+Segmentation & Dice vs CE & test mIoU & $+0.0150$ & overlap objective helps\\
+Segmentation & Smooth Dice vs Dice & test mIoU & $-0.0005$ & smoothing effect is minor\\
+Detection & YOLOv8s vs YOLOv8n & mAP50-95 & $+0.0546$ & capacity helps at 640\\
+Detection & YOLO11m@960 vs YOLOv8s & mAP50-95 & $+0.1099$ & capacity plus resolution helps more\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+The classification delta between random and pretrained ResNet-18 is much larger than the deltas among pretrained variants. This is the signature of a representation bottleneck. Once ImageNet features are available, the model already has useful edge, texture, part, and object-level filters, so later improvements are incremental. ResNet-34 improves the result because it adds depth while retaining pretraining, but the improvement is not comparable to the pretraining jump.
+
+The segmentation deltas are smaller in absolute terms, but this does not mean they are unimportant. mIoU is a strict region-overlap metric averaged over classes. A 1.5-point gain can reflect many corrected pixels, especially in the thin boundary class. The small difference between default Dice and smooth Dice means that the broad choice of overlap-based supervision matters more than the exact smoothing constant.
+
+The detection deltas are the largest among the model-extension results after classification pretraining. YOLOv8s improves over YOLOv8n at the same input size, so capacity clearly helps. YOLO11m@960 improves much more, which supports the tiny-object argument. The result is practically useful for the video pipeline because more correct detections increase the chance that ByteTrack can maintain identities through motion and partial occlusion.
+
+\subsection{Why Some Small Gains Are Still Worth Reporting}
+
+In homework reports, it is tempting to hide small or negative gains. I kept them because they make the study more credible. The SE-ResNet-18 extension did not beat the baseline, but it shows that channel attention was not the missing component under this protocol. Smooth Dice did not beat default Dice on the test set, but it shows that the Dice family is stable and that the exact smoothing constant is not the main source of performance. High-confidence tracking produced fewer counted crossings, but it shows that visually cleaner detections can be worse for counting recall.
+
+This is a scientific advantage rather than a weakness. A report that only includes winning settings can create a false impression that every popular technique works. The actual experiments show a more useful rule: improvements happen when the modification addresses the task bottleneck. Pretraining addresses limited classification data; Dice addresses overlap-based segmentation evaluation; higher-resolution detection addresses small aerial targets. SE attention, focal hard-pixel emphasis, and high confidence thresholds are not wrong ideas, but they do not directly solve the observed bottlenecks.
+
+\section{Appendix M: Additional Detection Diagnostics}
+
+\subsection{Confidence, Recall, and Tracking}
+
+For object detection alone, raising the confidence threshold often makes visual outputs cleaner because weak boxes disappear. For tracking and counting, the same change can be harmful. ByteTrack is designed to use lower-confidence detections to recover track continuity. If the detector suppresses too many weak but real boxes, tracks break near occlusions or near the counting line. The final count therefore depends on the detector and tracker as a coupled system.
+
+\begin{figure*}[!htbp]
+\centering
+\includegraphics[width=0.48\textwidth]{runs/detection/yolov8s_visdrone_capacity_extension/BoxF1_curve.png}
+\hfill
+\includegraphics[width=0.48\textwidth]{runs/detection/yolov8s_visdrone_capacity_extension/BoxR_curve.png}
+\caption{Additional YOLOv8s confidence-diagnostic curves. F1 combines precision and recall at different confidence levels, while the recall curve shows how quickly objects disappear as the threshold becomes stricter. This is directly relevant to the later line-crossing count.}
+\label{fig:appendix_yolov8s_f1_recall}
+\end{figure*}
+
+The tracking results are therefore not merely a post-processing add-on. They test whether the detector's errors are tolerable over time. A false negative in one frame may be bridged by a tracker, but repeated false negatives break the ID. A false positive that lasts only one frame may be harmless, but a false track that crosses the line may inflate the count. The best operating point is a compromise between single-frame detection quality and temporal continuity.
+
+\subsection{Why mAP and Counting Can Disagree}
+
+mAP is computed on annotated still images. Counting is computed on a video with a virtual line. These are related but not identical objectives. A detector with higher mAP usually helps counting, but the final count also depends on camera geometry, motion direction, tracker ID switches, and whether missed detections happen near the line. A missed object far away from the line may not change the count; a missed object exactly while crossing can change the count. Conversely, a false positive far from the line may not matter, while a false track crossing the line does.
+
+This distinction explains why the report presents both detector validation metrics and video-frame evidence. The detector metrics establish that YOLO11m@960 is the strongest trained model on VisDrone. The video experiment then demonstrates how that detector behaves in the downstream setting. The two parts answer different questions: ``Can the model detect objects in the dataset?'' and ``Can the trained detector support a concrete counting pipeline?''
+
+\subsection{Manual Video Choice and External Validity}
+
+The selected video segment is rainy and visually difficult. This is useful for demonstration because a trivial clean video would not reveal occlusion, threshold sensitivity, or ID continuity issues. However, it also means that the counted number is not a universal performance estimate. A sunny road scene with larger vehicles would likely produce more stable tracks. A denser crowd or stronger camera motion would likely produce more ID switches. The video is therefore best interpreted as a stress test for the trained detector and tracker rather than a full benchmark.
+
+The assignment requirement is satisfied because the detector is trained on the required VisDrone aerial detection dataset, and the video stage uses the trained detector for a real tracking/counting task. The video does not replace VisDrone training; it extends the trained detector into a temporal application. This distinction is important: the dataset supplies supervised detection learning, while the video supplies qualitative and algorithmic evaluation of deployment behavior.
+
+\section{Appendix N: What I Would Say in an Oral Defense}
+
+\subsection{Classification Defense}
+
+If asked why the classification model works, the short answer is transfer learning. The input image is resized and normalized so that it matches the statistical assumptions of the ImageNet-pretrained ResNet. The convolutional stem extracts low-level patterns, residual blocks build deeper visual features, global average pooling forms one image-level descriptor, and the new fully connected layer maps that descriptor to 37 breed classes. The experiment shows that this pretrained representation is much more important than adding an SE block. The strongest extension, ResNet-34, helps because it increases depth without abandoning the pretrained feature hierarchy.
+
+If asked why label smoothing is useful, the answer is calibration and regularization. Ordinary cross-entropy treats the correct class as probability 1 and all other classes as probability 0. Label smoothing softens this target distribution, so the model is not rewarded for becoming infinitely confident. In fine-grained breed recognition, some classes are visually similar, so overconfidence can hurt generalization. The grid search shows that mild smoothing can be reasonable, but too much smoothing or too high a head learning rate does not produce a decisive gain.
+
+\subsection{Segmentation Defense}
+
+If asked why Dice loss fits segmentation, the key point is that the evaluation metric is overlap-based. Cross-entropy supervises each pixel separately. Dice loss compares the predicted and true regions as sets through their intersection and total size. Since Dice is monotonically related to IoU for a single class, it naturally aligns with mIoU better than pure pixel-wise CE. The result confirms this: Dice gives the best required segmentation test mIoU.
+
+If asked why boundaries remain difficult, the answer is annotation and resolution. The trimap boundary class is thin, and after resizing to $224\times224$, fur edges and small structures become compressed. The U-Net skip connections help recover spatial detail, but they cannot perfectly reconstruct ambiguous boundaries. This is why future improvements should target boundary-aware losses, higher resolution, or decoder deep supervision instead of only changing the global loss.
+
+\subsection{Detection and Tracking Defense}
+
+If asked why mAP50 and mAP50-95 differ so much, the answer is localization strictness. mAP50 only requires IoU at least 0.5, so a roughly correct box can count. mAP50-95 averages over stricter thresholds up to 0.95, where even small coordinate errors matter. VisDrone objects are tiny, so a few pixels of error can strongly affect IoU. Therefore, the gap between 0.5356 mAP50 and 0.3310 mAP50-95 is expected and should not be mistaken for a bug.
+
+If asked why the final detector uses YOLO11m@960, the answer is practical bottleneck matching. YOLOv8n is fast but misses many small targets. YOLOv8s improves capacity at the same 640 resolution. YOLO11m@960 preserves more pixels and uses a stronger one-stage detector, giving the best mAP and the most useful tracking input. The comparison is not a pure architecture ablation because resolution also changes, but it is a valid engineering extension for a difficult aerial dataset.
+
+\section{Appendix O: Submission Artifacts and Layout Policy}
+
+\subsection{Model Artifacts}
+
+The final model weights are hosted externally on ModelScope at \path{https://www.modelscope.cn/models/yuhengli/cv-hw2-final-model}. This separation is intentional. The GitHub repository should contain source code, configuration files, scripts, the report, and lightweight visual artifacts, while large neural-network checkpoints are better stored in a model repository. This prevents the code repository from becoming unnecessarily large and makes the final trained models easier to download independently.
+
+The artifact set contains the final models used for the three tasks and the comparison checkpoints needed to support the report. For classification, the important checkpoints are the pretrained ResNet-18 baseline, the random-initialization ablation, the SE-ResNet-18 extension, and the stronger ResNet-34 extension. For segmentation, the important checkpoints are U-Net with CE, Dice, CE+Dice, smooth Dice, and Focal Loss. For detection, the important checkpoints are the YOLOv8n baseline, the YOLOv8s capacity extension, and the final YOLO11m@960 model used for video tracking.
+
+\subsection{Why the Report Keeps Code, Weights, and Figures Separate}
+
+The report is not meant to be a replacement for the repository. It explains the experimental logic, gives the most important results, and includes representative visual evidence. The repository stores the exact commands, configs, and scripts that generated those results. The ModelScope page stores the heavy binary weights. Keeping these roles separate improves reproducibility: a reader can inspect the paper for reasoning, inspect GitHub for implementation, and download ModelScope weights for re-running inference.
+
+This organization also reduces ambiguity in grading. If a scalar result appears in the paper, it should be traceable to a saved summary file or training log. If a figure appears in the paper, it should be traceable to an asset generated by the harness. If a trained model is discussed as final, it should be available as an external checkpoint. The project was organized around this traceability principle from the beginning.
+
+\subsection{Figure Layout Policy}
+
+Because the report uses a two-column format, figures are placed according to their geometry. Narrow or tall figures use ordinary single-column floats with width no larger than \verb|\linewidth| and height constrained when necessary. This prevents tall grids from overflowing the page and lets the surrounding text remain in two columns. Wide comparison figures use \verb|figure*| so that they may span both columns; after the caption, the document returns to the normal two-column flow automatically.
+
+Captions are placed below every figure, following standard paper style. I avoided manually forcing most figures with the \verb|H| placement specifier because hard placement often creates large blank regions in two-column papers. Instead, the report relies on LaTeX floats with conservative scaling. This is the reason some figures may appear slightly after the paragraph that first discusses them: the trade-off is better page safety and fewer overfull graphics.
+
+The final layout therefore follows a practical rule. If the reader needs side-by-side comparison, the figure is allowed to span two columns. If the figure is only a diagnostic image or a tall grid, it stays in one column. This makes the report denser and prevents a single image from breaking the surrounding text flow.
+
+\subsection{Command-Level Reproducibility}
+
+The experiments are also reproducible at the command level. All training entry points are exposed through the same package interface, \verb|python -m cvhw2|, and each command receives a YAML configuration file. This design keeps command lines short while moving experimental variables into version-controlled configs. It also reduces the chance of accidental differences between runs because the run directory, checkpoint directory, seed, optimizer settings, and data paths are recorded together.
+
+\begin{table*}[!htbp]
+\centering
+\caption{Command-level reproducibility map. All entries use the common prefix \texttt{PYTHONPATH=src python -m cvhw2}; the exact config file is the unit of experiment definition.}
+\label{tab:appendix_commands}
+\begin{tabular}{p{0.15\textwidth}p{0.43\textwidth}p{0.30\textwidth}}
+\toprule
+Task & Command pattern & Example config role\\
+\midrule
+Classification & \texttt{train-classification --config <cfg>} & ResNet-18, SE-ResNet-18, ResNet-34, grid search\\
+Segmentation & \texttt{train-segmentation --config <cfg>} & CE, Dice, CE+Dice, smooth Dice, Focal\\
+Detection & \texttt{train-detection --config <cfg>} & YOLOv8n, YOLOv8s, YOLO11m@960\\
+Analysis & \texttt{analyze-classification --config <cfg>} & confusion matrix and mistake grids\\
+Tracking & \texttt{track-video --weights <pt>} & ByteTrack/BoT-SORT video counting\\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+This command structure is part of the harness contribution. In a manual notebook workflow, it is easy to forget which learning rate, checkpoint, or split was used to create a figure. In this project, every important run has a named config and a corresponding output directory. The report can therefore cite figures and numbers with less ambiguity. If a reader wants to challenge a result, the correct response is not a vague description of training, but a concrete config, checkpoint, log file, and command path.
+
+The same principle applies to failed or weaker experiments. Random ResNet-18, SE-ResNet-18, Focal U-Net, and high-confidence tracking are not discarded. They remain reproducible runs with saved outputs. This matters because negative results are only useful if they can be inspected. A weak result without logs is merely anecdotal; a weak result with a config, curve, checkpoint, and visualization is evidence about the task.
+
 \begin{thebibliography}{9}
 \bibitem{oxfordpet}
 O. M. Parkhi, A. Vedaldi, A. Zisserman, and C. V. Jawahar. Cats and Dogs. In \emph{IEEE Conference on Computer Vision and Pattern Recognition}, 2012.
