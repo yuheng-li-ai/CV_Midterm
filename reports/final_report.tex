@@ -28,6 +28,12 @@
 \setlength{\floatsep}{5pt plus 2pt minus 2pt}
 \setlength{\intextsep}{5pt plus 2pt minus 2pt}
 \setlength{\dbltextfloatsep}{6pt plus 2pt minus 2pt}
+\renewcommand{\topfraction}{0.92}
+\renewcommand{\bottomfraction}{0.85}
+\renewcommand{\textfraction}{0.08}
+\renewcommand{\floatpagefraction}{0.85}
+\renewcommand{\dbltopfraction}{0.92}
+\renewcommand{\dblfloatpagefraction}{0.85}
 \captionsetup{font=footnotesize,labelfont=bf}
 
 \title{\vspace{-1.0em}A Reproducible Computer Vision Study Across Fine-Grained Recognition, Pet Segmentation, and Aerial Object Detection}
@@ -165,33 +171,17 @@ This observation changes how the classification result should be judged. A test 
 
 \begin{figure*}[!htbp]
 \centering
-\begin{minipage}[c]{0.54\textwidth}
-\centering
-\includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_analysis/test_confusion_matrix.png}
-\end{minipage}
-\hfill
-\begin{minipage}[c]{0.42\textwidth}
-\small
-\textbf{Interpretation.} The matrix is dominated by a strong diagonal, which is consistent with the near-90\% test accuracy. The visible off-diagonal errors are concentrated in breed groups with similar appearance rather than being uniformly distributed. This supports a fine-grained recognition interpretation: the model is not confused about the broad pet category, but about subtle breed-level cues such as head shape, coat texture, and color pattern.
-\end{minipage}
-\caption{Confusion matrix for the pretrained ResNet-18 baseline with adjacent interpretation. The strongest off-diagonal blocks correspond to visually similar breeds rather than random category failures.}
+\includegraphics[width=0.62\textwidth]{assets/classification_resnet18_baseline_analysis/test_confusion_matrix.png}
+\caption{Confusion matrix for the pretrained ResNet-18 baseline. The matrix is dominated by a strong diagonal consistent with the near-90\% test accuracy. The visible off-diagonal blocks correspond to visually similar breeds (e.g., pit bull / Staffordshire / bulldog; Ragdoll / Birman / Siamese) rather than random category failures, so the model fails at fine-grained breed cues such as head shape and coat pattern rather than at coarse pet recognition.}
 \label{fig:classification_confusion}
 \end{figure*}
 
-\begin{figure*}[!htbp]
-\centering
-\begin{minipage}[c]{0.36\textwidth}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/report_compact/classification_mistakes_top12.png}
-\end{minipage}
-\hfill
-\begin{minipage}[c]{0.60\textwidth}
-\small
-\textbf{Qualitative error pattern.} The representative mistakes show that background clutter is not the only source of failure. Several wrong predictions involve animals photographed in clear view, but the discriminative breed cues are subtle. The pit bull, Staffordshire bull terrier, and bulldog group is difficult because of similar short fur and head structure. The Ragdoll, Birman, and Siamese group is difficult because coat color and facial color masks overlap. These examples explain why the ResNet-34 capacity extension helps but does not eliminate the hardest errors: more capacity improves representation, but the dataset still asks for local anatomical distinctions.
-\end{minipage}
-\caption{Representative classification mistakes from the pretrained ResNet-18 baseline. A compact subset is shown to keep the visual evidence close to the discussion without creating a page-breaking tall grid.}
+\caption{Representative classification mistakes from the pretrained ResNet-18 baseline. Most wrong predictions are not caused by background clutter; the animals are clearly visible, but discriminative breed cues are subtle. The pit bull / Staffordshire / bulldog group shares short fur and head structure, while Ragdoll / Birman / Siamese share coat color and facial masks.}
 \label{fig:classification_mistakes}
-\end{figure*}
+\end{figure}
 
 \section{Task 3: Pet Semantic Segmentation}
 
@@ -285,35 +275,19 @@ Figure~\ref{fig:segmentation_errors} compares ground-truth masks, predictions, b
 
 This qualitative evidence also clarifies the Focal Loss result. If the difficult pixels are mainly ambiguous boundaries, then increasing their weight does not necessarily create cleaner boundaries. It may instead amplify label noise or local uncertainty. Dice improves global overlap, but even it does not fully solve contour precision. A natural next step would be a boundary-aware loss or higher-resolution decoding, but that is beyond the required scope.
 
-\begin{figure*}[!htbp]
-\centering
-\begin{minipage}[c]{0.42\textwidth}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/report_compact/segmentation_required_masks_compact.png}
-\end{minipage}
-\hfill
-\begin{minipage}[c]{0.54\textwidth}
-\small
-\textbf{Mask-level reading.} The qualitative masks confirm the quantitative ordering in Table~\ref{tab:segmentation}, but they also show why mIoU is not the whole story. Dice improves global object overlap, while CE is stable but less directly aligned with overlap. The remaining errors concentrate on ears, legs, fur boundaries, and regions where the pet and background have similar color. Therefore, the best Dice score should be understood as better region consistency rather than perfect contour recovery.
-\end{minipage}
-\caption{Compact qualitative mask examples for the required segmentation losses. The panel places visual evidence and interpretation side by side without forcing the figure to continue onto the next page.}
+\caption{Compact qualitative mask examples for the required segmentation losses (columns: ground truth, CE, Dice, CE+Dice). Dice improves global object overlap while CE remains less directly aligned with overlap. Remaining errors concentrate on ears, legs, fur boundaries, and regions where pet and background share color.}
 \label{fig:segmentation_masks}
-\end{figure*}
+\end{figure}
 
-\begin{figure*}[!htbp]
-\centering
-\begin{minipage}[c]{0.34\textwidth}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/report_compact/segmentation_error_cases_compact.png}
-\end{minipage}
-\hfill
-\begin{minipage}[c]{0.62\textwidth}
-\small
-\textbf{Failure mode.} The error overlays make the boundary problem more explicit than the raw masks. The model usually captures the pet body, but red error regions remain around object contours and thin structures. This explains why Focal Loss did not solve the problem: many hard pixels are ambiguous boundary pixels, so simply increasing their weight can emphasize uncertainty rather than produce a cleaner contour.
-\end{minipage}
-\caption{Segmentation failure cases with compact text integration. The most persistent errors occur at object boundaries, thin structures, and low-contrast regions rather than in the coarse pet/background separation.}
+\caption{Segmentation failure cases. The error overlays make the boundary problem explicit: red regions remain around object contours and thin structures even when the pet body is captured correctly. This is why Focal Loss did not solve the problem -- many hard pixels are ambiguous boundary pixels.}
 \label{fig:segmentation_errors}
-\end{figure*}
+\end{figure}
 
 \section{Task 2: VisDrone Detection and Tracking}
 
@@ -345,33 +319,21 @@ YOLOv8n is the required lightweight one-stage baseline. It reached 0.2985 mAP50 
 
 The improvement has two sources that cannot be perfectly separated in this experiment: the newer YOLO11m architecture and the larger 960-pixel input size. Both are plausible contributors. Small objects occupy very few pixels in VisDrone, so higher resolution directly improves feature visibility. At the same time, the larger model has more capacity to represent dense object patterns and difficult class distinctions. The practical conclusion is that for VisDrone, a stronger detector at higher resolution is much more useful for downstream tracking than a very small detector, as long as the available GPU memory permits it.
 
-\begin{figure*}[t]
+A second pattern in Table~\ref{tab:detection} deserves a structural explanation: precision is systematically higher than recall for all three detectors, with the gap roughly preserved around 0.10 (YOLOv8n: 0.42 vs 0.32; YOLOv8s: 0.52 vs 0.39; YOLO11m: 0.62 vs 0.53). The asymmetry is not a sign of insufficient training. Precision is the fraction of predicted boxes that are correct, so its denominator only contains predictions the detector was confident enough to emit; the lowest-confidence candidates are filtered out before the metric is computed, biasing the denominator toward easier cases. Recall is the fraction of ground-truth boxes that were found, so its denominator contains every annotated object, including the long tail of small, occluded, or low-contrast targets that the detector physically cannot resolve at the chosen input resolution. Recall is therefore bounded from above by what the network can perceive, while precision is bounded by how often the network is willing to fire, and the gap persists even when the model becomes substantially stronger. The resolution lift from 640 to 960 closed more of the gap than capacity alone because it directly addresses the recall ceiling on tiny objects rather than the precision side.
+
+This asymmetry also has a favorable consequence for the downstream tracking pipeline. A precision-leaning detector emits fewer false-positive boxes, which would otherwise be assigned new track IDs by ByteTrack or BoT-SORT and inflate the line-crossing count through ghost trajectories. A missed detection, by contrast, can often be bridged across one or two frames by the tracker's Kalman prediction without permanently breaking the ID. Therefore, when the available recall is reasonable, the precision side being higher is a desirable operating point for counting; the lightweight YOLOv8n baseline fails the pipeline mainly through insufficient recall on small targets, not through low precision.
+
+\begin{figure*}[!htbp]
 \centering
-\begin{minipage}{0.61\textwidth}
-\centering
-\includegraphics[width=\linewidth]{assets/detection_yolov8n_results.png}
-\end{minipage}
-\hfill
-\begin{minipage}{0.34\textwidth}
-\small
-\textbf{Baseline reading.} YOLOv8n improves steadily, but recall remains low for VisDrone. This is expected because many pedestrians and vehicles occupy very few pixels, and dense occlusion makes localization difficult. The lightweight model is useful as a required baseline, but it is not strong enough for reliable downstream counting.
-\end{minipage}
-\caption{YOLOv8n training summary on VisDrone with adjacent interpretation.}
+\includegraphics[width=0.78\textwidth]{assets/detection_yolov8n_results.png}
+\caption{YOLOv8n training summary on VisDrone. Precision and recall climb together, but precision stays consistently above recall throughout training because the long tail of tiny, occluded VisDrone targets is mostly unrecoverable at 640-pixel input. Recall plateaus near 0.33, leaving the lightweight model unsuitable for reliable downstream counting.}
 \label{fig:detection_v8n_curves}
 \end{figure*}
 
-\begin{figure*}[t]
+\begin{figure*}[!htbp]
 \centering
-\begin{minipage}{0.61\textwidth}
-\centering
-\includegraphics[width=\linewidth]{assets/detection_yolov8s_results.png}
-\end{minipage}
-\hfill
-\begin{minipage}{0.34\textwidth}
-\small
-\textbf{Capacity effect.} Compared with YOLOv8n, YOLOv8s improves precision, recall, mAP50, and mAP50-95. This shows that the low baseline score is not only a training failure; VisDrone genuinely benefits from larger detector capacity. The trade-off is model size and training time, which matters because the detector is later used for video tracking.
-\end{minipage}
-\caption{YOLOv8s training summary on VisDrone with compact explanation.}
+\includegraphics[width=0.78\textwidth]{assets/detection_yolov8s_results.png}
+\caption{YOLOv8s training summary on VisDrone. Compared with YOLOv8n, the larger backbone lifts precision, recall, mAP50, and mAP50-95 in parallel, but the precision--recall gap stays roughly the same: the low baseline score was a capacity limit, not a training failure. The trade-off is model size and training time, which matters because the detector is later reused for video tracking.}
 \label{fig:detection_v8s_curves}
 \end{figure*}
 
@@ -440,20 +402,12 @@ The difference between ByteTrack and BoT-SORT should not be simplified as one be
 \label{fig:tracking_crossing}
 \end{figure*}
 
-\begin{figure*}[!htbp]
-\centering
-\begin{minipage}[c]{0.58\textwidth}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/tracking_report_frames/counting_example_815.jpg}
-\end{minipage}
-\hfill
-\begin{minipage}[c]{0.38\textwidth}
-\small
-\textbf{Counting snapshot.} This later frame shows the accumulated count after several crossing events. It also exposes the limitation of the pipeline: some visible road users remain difficult under rain, distance, and occlusion. Thus the number should be treated as a reproducible algorithmic estimate rather than a manually verified traffic statistic.
-\end{minipage}
-\caption{A later tracking snapshot with accumulated line count and adjacent interpretation.}
+\caption{A later tracking snapshot with the accumulated line count visible in the top-left overlay. Some visible road users remain difficult under rain, distance, and occlusion, so the count should be treated as a reproducible algorithmic estimate rather than a manually verified traffic statistic.}
 \label{fig:tracking_count}
-\end{figure*}
+\end{figure}
 
 \subsection{Counting Error Analysis}
 
