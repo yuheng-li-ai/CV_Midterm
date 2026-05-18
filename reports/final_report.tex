@@ -13,8 +13,6 @@
 \usepackage{caption}
 \usepackage{float}
 \usepackage{xcolor}
-\usepackage{cuted}
-\usepackage{capt-of}
 
 \hypersetup{
   colorlinks=true,
@@ -124,40 +122,40 @@ Label smoothing & Head LR & Best epoch & Best Val & Test Acc.\\
 
 The grid search shows that the classification result is not highly sensitive to these two hyperparameters within the tested range. The best validation result, 0.9167, occurs at label smoothing 0.05 and head learning rate $10^{-3}$, which is close to the original baseline design. Increasing label smoothing to 0.10 does not improve validation accuracy, suggesting that too much target softening can weaken the fine-grained breed signal. A larger head learning rate improves some test numbers but does not consistently improve validation performance, so I did not use it to redefine the final model. This supports a conservative conclusion: careful fine-tuning matters, but pretraining and backbone capacity remain the dominant factors in this task.
 
-\begin{center}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/classification_hparam_grid/val_accuracy_heatmap.png}
-\captionof{figure}{Validation accuracy heatmap for the classification hyperparameter grid. The narrow range of values indicates mild sensitivity compared with the much larger effect of ImageNet pretraining.}
+\caption{Validation accuracy heatmap for the classification hyperparameter grid. The narrow range of values indicates mild sensitivity compared with the much larger effect of ImageNet pretraining.}
 \label{fig:classification_hparam_heatmap}
-\end{center}
+\end{figure}
 
-\begin{center}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/classification_all_test_summary/test_accuracy.png}
-\captionof{figure}{Classification test accuracy comparison. The main gain comes from ImageNet pretraining, while the best extension is the larger pretrained ResNet-34.}
+\caption{Classification test accuracy comparison. The main gain comes from ImageNet pretraining, while the best extension is the larger pretrained ResNet-34.}
 \label{fig:classification_bar}
-\end{center}
+\end{figure}
 
-\begin{center}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_curves.png}
-\captionof{figure}{Training curves for the ImageNet-pretrained ResNet-18 baseline. The validation peak occurs early, showing why best-checkpoint evaluation is preferable to last-epoch reporting.}
+\caption{Training curves for the ImageNet-pretrained ResNet-18 baseline. The validation peak occurs early, showing why best-checkpoint evaluation is preferable to last-epoch reporting.}
 \label{fig:classification_curves}
-\end{center}
+\end{figure}
 
-\begin{center}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/classification_resnet18_random_curves.png}
-\captionof{figure}{Training curves for the randomly initialized ResNet-18. Compared with Fig.~\ref{fig:classification_curves}, convergence is much slower and the validation accuracy remains far below the pretrained model under the same epoch budget.}
+\caption{Training curves for the randomly initialized ResNet-18. Compared with Fig.~\ref{fig:classification_curves}, convergence is much slower and the validation accuracy remains far below the pretrained model under the same epoch budget.}
 \label{fig:classification_random_curves}
-\end{center}
+\end{figure}
 
-\begin{center}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/classification_se_resnet18_curves.png}
-\captionof{figure}{Training curves for the SE-ResNet-18 extension. The curve shows that attention did not create a clear generalization gain over the simpler pretrained ResNet-18 baseline.}
+\caption{Training curves for the SE-ResNet-18 extension. The curve shows that attention did not create a clear generalization gain over the simpler pretrained ResNet-18 baseline.}
 \label{fig:classification_se_curves}
-\end{center}
+\end{figure}
 
 \subsection{Error Analysis}
 
@@ -165,39 +163,35 @@ The confusion matrix in Fig.~\ref{fig:classification_confusion} and the mistake 
 
 This observation changes how the classification result should be judged. A test accuracy near 90\% is strong, but the remaining errors are concentrated exactly where subtle anatomical cues are required. More data augmentation, higher-resolution crops, or part-aware features might help these cases more than a generic increase in classifier capacity.
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
-\begin{minipage}{0.62\textwidth}
+\begin{minipage}[c]{0.54\textwidth}
 \centering
 \includegraphics[width=\linewidth]{assets/classification_resnet18_baseline_analysis/test_confusion_matrix.png}
 \end{minipage}
 \hfill
-\begin{minipage}{0.34\textwidth}
+\begin{minipage}[c]{0.42\textwidth}
 \small
 \textbf{Interpretation.} The matrix is dominated by a strong diagonal, which is consistent with the near-90\% test accuracy. The visible off-diagonal errors are concentrated in breed groups with similar appearance rather than being uniformly distributed. This supports a fine-grained recognition interpretation: the model is not confused about the broad pet category, but about subtle breed-level cues such as head shape, coat texture, and color pattern.
 \end{minipage}
-\captionof{figure}{Confusion matrix for the pretrained ResNet-18 baseline with adjacent interpretation. The strongest off-diagonal blocks correspond to visually similar breeds rather than random category failures.}
+\caption{Confusion matrix for the pretrained ResNet-18 baseline with adjacent interpretation. The strongest off-diagonal blocks correspond to visually similar breeds rather than random category failures.}
 \label{fig:classification_confusion}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
-\begin{minipage}{0.34\textwidth}
+\begin{minipage}[c]{0.36\textwidth}
 \centering
 \includegraphics[width=\linewidth]{assets/report_compact/classification_mistakes_top12.png}
 \end{minipage}
 \hfill
-\begin{minipage}{0.60\textwidth}
+\begin{minipage}[c]{0.60\textwidth}
 \small
 \textbf{Qualitative error pattern.} The representative mistakes show that background clutter is not the only source of failure. Several wrong predictions involve animals photographed in clear view, but the discriminative breed cues are subtle. The pit bull, Staffordshire bull terrier, and bulldog group is difficult because of similar short fur and head structure. The Ragdoll, Birman, and Siamese group is difficult because coat color and facial color masks overlap. These examples explain why the ResNet-34 capacity extension helps but does not eliminate the hardest errors: more capacity improves representation, but the dataset still asks for local anatomical distinctions.
 \end{minipage}
-\captionof{figure}{Representative classification mistakes from the pretrained ResNet-18 baseline. A compact subset is shown to keep the visual evidence close to the discussion without creating a page-breaking tall grid.}
+\caption{Representative classification mistakes from the pretrained ResNet-18 baseline. A compact subset is shown to keep the visual evidence close to the discussion without creating a page-breaking tall grid.}
 \label{fig:classification_mistakes}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
 \section{Task 3: Pet Semantic Segmentation}
 
@@ -234,23 +228,23 @@ Dice loss achieved the best required result, with 77.90\% test mIoU. This suppor
 
 The interpretation should remain bounded. Dice was best in this controlled setup, but this does not mean Dice is universally superior. Cross-entropy can be easier to optimize early, and Dice can be sensitive when classes are extremely small or predictions are unstable. In this dataset and schedule, however, the object-overlap objective matched the evaluation target well.
 
-\begin{center}
+\begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{assets/segmentation_60_test_summary/test_miou.png}
-\captionof{figure}{Test mIoU for the required 60-epoch segmentation losses. Dice loss gives the strongest required result.}
+\caption{Test mIoU for the required 60-epoch segmentation losses. Dice loss gives the strongest required result.}
 \label{fig:segmentation_bar}
-\end{center}
+\end{figure}
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_ce_60/curves.png}
+\hfill
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_60/curves.png}
+\hfill
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_ce_plus_dice_60/curves.png}
-\captionof{figure}{Training curves for the required segmentation losses: CE, Dice, and CE+Dice from left to right. These panels have the same aspect ratio and are therefore compared side by side. Dice improves more slowly but reaches the best validation and test mIoU.}
+\caption{Training curves for the required segmentation losses: CE, Dice, and CE+Dice from left to right. These panels have the same aspect ratio and are therefore compared side by side. Dice improves more slowly but reaches the best validation and test mIoU.}
 \label{fig:segmentation_required_curves}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
 \subsection{Loss Engineering Extensions}
 
@@ -274,16 +268,16 @@ Focal Loss & 45 & 0.7637 & 0.7645\\
 \end{tabular}
 \end{table}
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_60/curves.png}
+\hfill
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_dice_smooth_0_1_60/curves.png}
+\hfill
 \includegraphics[width=0.32\textwidth]{runs/segmentation/unet_focal_60/curves.png}
-\captionof{figure}{Training curves for segmentation extensions: Dice with smooth 1.0, Dice with smooth 0.1, and Focal Loss from left to right. The two Dice variants are close, while Focal Loss does not improve mIoU despite emphasizing hard pixels.}
+\caption{Training curves for segmentation extensions: Dice with smooth 1.0, Dice with smooth 0.1, and Focal Loss from left to right. The two Dice variants are close, while Focal Loss does not improve mIoU despite emphasizing hard pixels.}
 \label{fig:segmentation_extension_curves}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
 \subsection{Qualitative Segmentation Analysis}
 
@@ -291,41 +285,36 @@ Figure~\ref{fig:segmentation_errors} compares ground-truth masks, predictions, b
 
 This qualitative evidence also clarifies the Focal Loss result. If the difficult pixels are mainly ambiguous boundaries, then increasing their weight does not necessarily create cleaner boundaries. It may instead amplify label noise or local uncertainty. Dice improves global overlap, but even it does not fully solve contour precision. A natural next step would be a boundary-aware loss or higher-resolution decoding, but that is beyond the required scope.
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
-\begin{minipage}{0.40\textwidth}
+\begin{minipage}[c]{0.42\textwidth}
 \centering
 \includegraphics[width=\linewidth]{assets/report_compact/segmentation_required_masks_compact.png}
 \end{minipage}
 \hfill
-\begin{minipage}{0.55\textwidth}
+\begin{minipage}[c]{0.54\textwidth}
 \small
 \textbf{Mask-level reading.} The qualitative masks confirm the quantitative ordering in Table~\ref{tab:segmentation}, but they also show why mIoU is not the whole story. Dice improves global object overlap, while CE is stable but less directly aligned with overlap. The remaining errors concentrate on ears, legs, fur boundaries, and regions where the pet and background have similar color. Therefore, the best Dice score should be understood as better region consistency rather than perfect contour recovery.
 \end{minipage}
-\captionof{figure}{Compact qualitative mask examples for the required segmentation losses. The panel places visual evidence and interpretation side by side without forcing the figure to continue onto the next page.}
+\caption{Compact qualitative mask examples for the required segmentation losses. The panel places visual evidence and interpretation side by side without forcing the figure to continue onto the next page.}
 \label{fig:segmentation_masks}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
-\begin{minipage}{0.32\textwidth}
+\begin{minipage}[c]{0.34\textwidth}
 \centering
 \includegraphics[width=\linewidth]{assets/report_compact/segmentation_error_cases_compact.png}
 \end{minipage}
 \hfill
-\begin{minipage}{0.62\textwidth}
+\begin{minipage}[c]{0.62\textwidth}
 \small
 \textbf{Failure mode.} The error overlays make the boundary problem more explicit than the raw masks. The model usually captures the pet body, but red error regions remain around object contours and thin structures. This explains why Focal Loss did not solve the problem: many hard pixels are ambiguous boundary pixels, so simply increasing their weight can emphasize uncertainty rather than produce a cleaner contour.
 \end{minipage}
-\captionof{figure}{Segmentation failure cases with compact text integration. The most persistent errors occur at object boundaries, thin structures, and low-contrast regions rather than in the coarse pet/background separation.}
+\caption{Segmentation failure cases with compact text integration. The most persistent errors occur at object boundaries, thin structures, and low-contrast regions rather than in the coarse pet/background separation.}
 \label{fig:segmentation_errors}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
-\vspace*{2.0in}
 \section{Task 2: VisDrone Detection and Tracking}
 
 \subsection{VisDrone Data Preparation}
@@ -425,48 +414,46 @@ This comparison illustrates a precision-recall trade-off at the tracking level. 
 
 The difference between ByteTrack and BoT-SORT should not be simplified as one being universally better. The two trackers made different association decisions in dense traffic. ByteTrack preserved more crossing candidates and therefore produced a higher count. BoT-SORT was more conservative in the final count. Without manually annotated video ground truth, the count should be treated as a reproducible estimate rather than an absolute traffic measurement.
 
-\clearpage
-
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_350.jpg}
+\hfill
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_351.jpg}
+\hfill
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_352.jpg}
+\hfill
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/occlusion_353.jpg}
-\captionof{figure}{Four consecutive dense and occluded tracking frames. The scene contains overlapping pedestrians, bicycles or e-bikes, vehicles, rain, and small objects, making ID preservation difficult.}
+\caption{Four consecutive dense and occluded tracking frames. The scene contains overlapping pedestrians, bicycles or e-bikes, vehicles, rain, and small objects, making ID preservation difficult.}
 \label{fig:tracking_occlusion}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_630.jpg}
+\hfill
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_631.jpg}
+\hfill
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_632.jpg}
+\hfill
 \includegraphics[width=0.245\textwidth]{assets/tracking_report_frames/crossing_633.jpg}
-\captionof{figure}{A consecutive line-crossing sequence. The tracked object crosses the virtual line and the count changes from 2 to 3 around frame 632.}
+\caption{A consecutive line-crossing sequence. The tracked object crosses the virtual line and the count changes from 2 to 3 around frame 632.}
 \label{fig:tracking_crossing}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
-\begin{strip}
-\vspace{-0.8em}
+\begin{figure*}[!htbp]
 \centering
-\begin{minipage}{0.57\textwidth}
+\begin{minipage}[c]{0.58\textwidth}
 \centering
 \includegraphics[width=\linewidth]{assets/tracking_report_frames/counting_example_815.jpg}
 \end{minipage}
 \hfill
-\begin{minipage}{0.38\textwidth}
+\begin{minipage}[c]{0.38\textwidth}
 \small
 \textbf{Counting snapshot.} This later frame shows the accumulated count after several crossing events. It also exposes the limitation of the pipeline: some visible road users remain difficult under rain, distance, and occlusion. Thus the number should be treated as a reproducible algorithmic estimate rather than a manually verified traffic statistic.
 \end{minipage}
-\captionof{figure}{A later tracking snapshot with accumulated line count and adjacent interpretation.}
+\caption{A later tracking snapshot with accumulated line count and adjacent interpretation.}
 \label{fig:tracking_count}
-\vspace{-0.8em}
-\end{strip}
+\end{figure*}
 
 \subsection{Counting Error Analysis}
 
